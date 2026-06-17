@@ -296,6 +296,26 @@ export const DECOR: DecorItem[] = [
   { slug: "monstera", pos: [3.4, 0, -8], height: 1.4, radius: 0 },
 ];
 
+// ───────────────────────── Avatar guide ─────────────────────────
+// Shraddha's guide-avatar (public/models/assistant.glb). She idles/greets at a
+// home spot near the entrance and, when animations are present, patrols a route
+// down the right side of the nave (kept clear of the centre benches + kiosk).
+export const ASSISTANT = {
+  home: [2.4, 0, 16.5] as [number, number, number], // greeter spot just inside the doors
+  height: 1.7, // normalised world height (metres)
+  greetRange: 4.0, // player distance that triggers a greeting
+  bowRange: 2.0, // closer still → a bow
+  walkSpeed: 1.1, // m/s while patrolling
+  // patrol waypoints (x kept ~2.4 to clear the nave benches at x=0 and the kiosk)
+  path: [
+    [2.4, 0, 16.5],
+    [2.4, 0, 6],
+    [2.4, 0, -10],
+    [2.4, 0, -30],
+    [2.4, 0, -44],
+  ] as [number, number, number][],
+};
+
 // Procedural marble columns flanking the entrance title wall (rendered in
 // Architecture, not from a GLB — the GLB column read as a cheap baluster).
 export const COLUMNS: { pos: [number, number, number]; height: number }[] = [

@@ -13,6 +13,7 @@ import Player from "./Player";
 import Exhibit, { ExhibitPicker } from "./Exhibit";
 import Decor, { DECOR_FILES } from "./Decor";
 import Kiosk from "./Kiosk";
+import Assistant, { ASSISTANT_URL } from "./Assistant";
 import MuseumPlacard from "./MuseumPlacard";
 import { getPlacements } from "@/lib/museum-layout";
 import { getExhibits } from "@/content";
@@ -63,6 +64,7 @@ function Scene() {
       <Architecture />
       <Decor />
       <Kiosk />
+      <Assistant />
       {placements.map((p) => (
         <Exhibit key={p.exhibit.slug} p={p} />
       ))}
@@ -101,7 +103,8 @@ export default function Museum() {
     const imgUrls = getExhibits().flatMap((e) =>
       e.image ? [e.image.thumb, e.image.full] : [],
     );
-    const total = imgUrls.length + DECOR_FILES.length;
+    const gltfUrls = [...DECOR_FILES, ASSISTANT_URL];
+    const total = imgUrls.length + gltfUrls.length;
     if (total === 0) {
       setReady(true);
       return;
@@ -120,7 +123,7 @@ export default function Museum() {
     // visitor enters nothing streams in mid-walk (drei's useGLTF.preload, fired
     // from Decor's module import, warms the same browser cache in parallel).
     imgUrls.forEach((u) => imgLoader.load(u, tick, undefined, tick));
-    DECOR_FILES.forEach((u) => gltfLoader.load(u, tick, undefined, tick));
+    gltfUrls.forEach((u) => gltfLoader.load(u, tick, undefined, tick));
     return () => {
       cancelled = true;
     };
