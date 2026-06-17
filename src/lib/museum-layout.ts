@@ -297,24 +297,44 @@ export const DECOR: DecorItem[] = [
 ];
 
 // ───────────────────────── Avatar guide ─────────────────────────
-// Shraddha's guide-avatar (public/models/assistant.glb). She idles/greets at a
-// home spot near the entrance and, when animations are present, patrols a route
-// down the right side of the nave (kept clear of the centre benches + kiosk).
+// Shraddha's guide-avatar (public/models/assistant.glb, Mixamo clips: Idle,
+// Walk, Greet, Talk, LookAround, Dance). She greets on entry, roams the galleries
+// watching art, attends/ follows when the visitor engages, and can be summoned.
 export const ASSISTANT = {
-  home: [2.4, 0, 16.5] as [number, number, number], // greeter spot just inside the doors
   height: 1.7, // normalised world height (metres)
-  greetRange: 4.0, // player distance that triggers a greeting
-  bowRange: 2.0, // closer still → a bow
-  walkSpeed: 1.1, // m/s while patrolling
-  // patrol waypoints (x kept ~2.4 to clear the nave benches at x=0 and the kiosk)
-  path: [
-    [2.4, 0, 16.5],
-    [2.4, 0, 6],
-    [2.4, 0, -10],
-    [2.4, 0, -30],
-    [2.4, 0, -44],
-  ] as [number, number, number][],
+  radius: 0.42, // collision footprint (fed to collide())
+  spawn: [2.4, 0, 16.5] as [number, number, number],
+  walkSpeed: 1.25, // m/s roaming/guiding
+  hurrySpeed: 2.0, // m/s when summoned to the visitor
+  greetRange: 5.5, // a fresh visitor within this → greet
+  engageRange: 3.0, // this close → she stops and attends
+  gazeRange: 9, // visitor looking at her within this distance → attention
+  gazeDot: 0.85, // cos(~32°): camera-forward vs direction-to-her
+  followDist: 3.0, // trailing distance while following
+  followDrop: 16, // give up following past this distance
 };
+
+// Navigation graph: hand-placed nodes whose edges are all collision-free
+// (they pass through the room openings, never through a wall). She BFS-paths
+// between nodes to roam/guide; collide() does fine obstacle avoidance on top.
+// `look` = the point she faces on arrival (usually the art in that spot).
+export interface NavNode {
+  pos: [number, number]; // x,z
+  look: [number, number]; // x,z she faces when paused here
+  to: number[]; // adjacent node indices
+}
+export const ASSISTANT_NAV: NavNode[] = [
+  { pos: [0, 18.5], look: [0, 24], to: [1] }, // 0 entrance
+  { pos: [2.5, 9], look: [4, 9], to: [0, 2, 3, 4] }, // 1 nave south
+  { pos: [-11, 6], look: [-20, 6], to: [1] }, // 2 identity bay
+  { pos: [11, 6], look: [20, 6], to: [1] }, // 3 print bay
+  { pos: [2.5, -8], look: [-4, -8], to: [1, 5] }, // 4 nave mid
+  { pos: [2.5, -24], look: [4, -24], to: [4, 6, 7, 8] }, // 5 nave (social/marketing)
+  { pos: [-11, -24], look: [-20, -24], to: [5] }, // 6 social bay
+  { pos: [11, -24], look: [20, -24], to: [5] }, // 7 marketing bay
+  { pos: [2.5, -42], look: [-4, -42], to: [5, 9] }, // 8 nave north
+  { pos: [0, -56], look: [0, -66], to: [8] }, // 9 information terminus
+];
 
 // Procedural marble columns flanking the entrance title wall (rendered in
 // Architecture, not from a GLB — the GLB column read as a cheap baluster).

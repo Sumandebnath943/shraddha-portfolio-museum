@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { collide, EYE_H, SPAWN, SEATS } from "@/lib/museum-layout";
-import { playerPos, useMuseum } from "@/store/museum";
+import { playerPos, playerDir, useMuseum } from "@/store/museum";
 
 const SPEED = 3.6;
 const ACCEL = 9;
@@ -89,6 +89,7 @@ export default function Player() {
   useFrame((_, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
     const st = useMuseum.getState();
+    camera.getWorldDirection(playerDir); // for the guide's gaze sensing
 
     // ─── seated: lock position, run idle auto-pan ───
     if (seatedRef.current !== null) {
@@ -115,7 +116,7 @@ export default function Player() {
 
     // ─── standing: free walk ───
     const k = keys.current;
-    const frozen = st.selected !== null || st.kioskOpen;
+    const frozen = st.selected !== null || st.kioskOpen || st.chatOpen;
 
     const f =
       (!frozen && (k["KeyW"] || k["ArrowUp"]) ? 1 : 0) -

@@ -14,6 +14,7 @@ import Exhibit, { ExhibitPicker } from "./Exhibit";
 import Decor, { DECOR_FILES } from "./Decor";
 import Kiosk from "./Kiosk";
 import Assistant, { ASSISTANT_URL } from "./Assistant";
+import AssistantChat from "./AssistantChat";
 import MuseumPlacard from "./MuseumPlacard";
 import { getPlacements } from "@/lib/museum-layout";
 import { getExhibits } from "@/content";
@@ -89,6 +90,7 @@ export default function Museum() {
   const nearKiosk = useMuseum((s) => s.nearKiosk);
   const kioskOpen = useMuseum((s) => s.kioskOpen);
   const setKioskOpen = useMuseum((s) => s.setKioskOpen);
+  const chatOpen = useMuseum((s) => s.chatOpen);
   const seatIndex = useMuseum((s) => s.seatIndex);
   const seated = useMuseum((s) => s.seated);
   const autoPanning = useMuseum((s) => s.autoPanning);
@@ -155,6 +157,13 @@ export default function Museum() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [locked, setKioskOpen]);
+
+  // opening the chat releases the pointer (so the visitor can type); closing
+  // it re-locks and resumes the walk.
+  useEffect(() => {
+    if (chatOpen) controls.current?.unlock();
+    else if (entered) controls.current?.lock();
+  }, [chatOpen, entered]);
 
   const closeKiosk = () => {
     setKioskOpen(false);
@@ -273,7 +282,7 @@ export default function Museum() {
       )}
 
       {/* enter / resume gate */}
-      {!isTouch && !selected && !locked && !kioskOpen && (
+      {!isTouch && !selected && !locked && !kioskOpen && !chatOpen && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-[var(--bg)]/82 text-center backdrop-blur-sm">
           <p className="eyebrow">{entered ? "Paused" : "Now Open"}</p>
           <h1 className="signage text-3xl text-[var(--ink)] sm:text-4xl">Shraddha Sonel</h1>
@@ -348,6 +357,8 @@ export default function Museum() {
           </div>
         </div>
       )}
+
+      {entered && <AssistantChat />}
 
       <MuseumPlacard onClose={closePlacard} />
     </div>

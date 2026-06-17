@@ -43,6 +43,10 @@ next-env.d.ts
 # local reference / source material (not part of the app)
 /Reference Images/
 /design assets/
+/raw-anim/
+/tmp_conv/
+/tmp_fbx/
+*.fbm/
 
 # local-only Claude Code settings
 .claude/settings.local.json
