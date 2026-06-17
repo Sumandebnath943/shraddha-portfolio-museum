@@ -45,14 +45,16 @@ function Scene() {
         shadow-camera-bottom={-30}
       />
 
-      {/* central path glow down the nave + entrance (the lit walkway).
-          The entrance lights are softer so they don't blow out the title wall. */}
-      {[18, 11, 4, -8, -20, -34, -48, -60].map((z, i) => (
+      {/* central path glow down the nave + entrance (the lit walkway). Forward
+          rendering evaluates every light on every fragment, so this is kept to a
+          lean set (perf): a few well-spaced warm lamps, entrance one softer so it
+          doesn't blow out the title wall. */}
+      {[16, 2, -14, -30, -46, -60].map((z, i) => (
         <pointLight
           key={i}
           position={[0, 4.3, z]}
-          intensity={z > 13 ? 11 : 24}
-          distance={16}
+          intensity={z > 13 ? 14 : 30}
+          distance={20}
           decay={2}
           color="#ffd9a0"
         />
@@ -169,13 +171,14 @@ export default function Museum() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[var(--bg)]">
       <Canvas
-        shadows
-        dpr={[1, 1.8]}
+        shadows="soft"
+        dpr={[1, 1.6]}
         camera={{ fov: 72, near: 0.1, far: 250 }}
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.02,
+          powerPreference: "high-performance",
         }}
       >
         <Suspense fallback={null}>

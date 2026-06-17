@@ -58,6 +58,24 @@ export const DECOR_CREDITS: DecorCredit[] = [
     "source": "https://poly.pizza/m/jqcanvH7D6"
   },
   {
+    "slug": "palm",
+    "file": "/models/palm.glb",
+    "glb": "https://static.poly.pizza/4c17decd-3087-4afe-9611-cfd92cca47cd.glb",
+    "title": "Palm Tree",
+    "creator": "Quaternius",
+    "license": "CC0",
+    "source": "https://poly.pizza/m/A6cKJYFsIb"
+  },
+  {
+    "slug": "tree",
+    "file": "/models/tree.glb",
+    "glb": "https://static.poly.pizza/a2102cc2-cbe7-4bd0-8bc5-c0d4ee6e9e0d.glb",
+    "title": "Tree",
+    "creator": "Quaternius",
+    "license": "CC0",
+    "source": "https://poly.pizza/m/i4QMw4L64D"
+  },
+  {
     "slug": "horse-statue",
     "file": "/models/horse-statue.glb",
     "glb": "https://static.poly.pizza/55b0aa03-543c-439d-a7d7-f0ac4c23578f.glb",
@@ -74,23 +92,5 @@ export const DECOR_CREDITS: DecorCredit[] = [
     "creator": "Quaternius",
     "license": "CC0",
     "source": "https://poly.pizza/m/cKloIsNcT8"
-  },
-  {
-    "slug": "pedestal",
-    "file": "/models/pedestal.glb",
-    "glb": "https://static.poly.pizza/cc5afa7b-86ed-44d0-9521-709ade03fda3.glb",
-    "title": "Pedestal",
-    "creator": "Quaternius",
-    "license": "CC0",
-    "source": "https://poly.pizza/m/wUeoDKnFBF"
-  },
-  {
-    "slug": "column",
-    "file": "/models/column.glb",
-    "glb": "https://static.poly.pizza/105dfd4b-6af3-4732-8c29-a89b15135b07.glb",
-    "title": "Column Round",
-    "creator": "Quaternius",
-    "license": "CC0",
-    "source": "https://poly.pizza/m/n8ZvVFcJhl"
   }
 ];

@@ -113,9 +113,11 @@ export default function Exhibit({ p }: { p: ExhibitPlacement }) {
   useFrame(() => {
     const dist = playerPos.distanceTo(worldPos.current);
     const near = dist < 7;
-    // cull the light when far (with hysteresis); generous range so a whole bay
-    // reads as lit in the moody scene
-    const want = dist < (litRef.current ? 26 : 24);
+    // Only mount a real spotlight for pieces in the immediate vicinity (the bay
+    // you're standing in) — the always-on wall "pool" keeps everything else
+    // reading as lit. This keeps the live light count to a handful instead of
+    // ~20 at once, which is the main framerate win in forward rendering.
+    const want = dist < (litRef.current ? 9.5 : 8);
     if (want !== litRef.current) {
       litRef.current = want;
       setLit(want);
@@ -205,11 +207,11 @@ export default function Exhibit({ p }: { p: ExhibitPlacement }) {
         </>
       )}
 
-      {/* wall label — a printed "tombstone" card mounted on the wall beside the
-          piece, the way galleries actually do it: a small pale panel with crisp
-          dark sans-serif text (high contrast, clear hierarchy). Placed to the
-          lower-right of the frame at a comfortable reading height. */}
-      <group position={[w / 2 + 0.18 + LABEL_W / 2, -h / 2 + LABEL_H / 2 - 0.02, 0.02]}>
+      {/* wall label — a printed "tombstone" card, the way galleries do it: a
+          small pale panel with crisp dark sans-serif text (high contrast, clear
+          hierarchy). Centred just below the frame on otherwise-empty wall, so it
+          never collides with the neighbouring piece. */}
+      <group position={[0, -h / 2 - 0.035 - LABEL_H / 2, 0.02]}>
         {/* card stock, very slightly proud of the wall */}
         <mesh castShadow>
           <boxGeometry args={[LABEL_W, LABEL_H, 0.012]} />

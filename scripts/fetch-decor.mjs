@@ -16,10 +16,10 @@ const PICKS = [
   { slug: "snake-plant", id: "BDwimVUool" },
   { slug: "houseplant", id: "bfLOqIV5uP" },
   { slug: "fern", id: "jqcanvH7D6" },
+  { slug: "palm", id: "A6cKJYFsIb" },
+  { slug: "tree", id: "i4QMw4L64D" },
   { slug: "horse-statue", id: "AK9CmjFnL6" },
   { slug: "stag-statue", id: "cKloIsNcT8" },
-  { slug: "pedestal", id: "wUeoDKnFBF" },
-  { slug: "column", id: "n8ZvVFcJhl" },
 ];
 
 const pick = (re, html) => {

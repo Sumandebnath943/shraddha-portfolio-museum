@@ -11,9 +11,54 @@ import {
   WING_SIGNS,
   BENCHES,
   CARPETS,
+  COLUMNS,
   type Seg,
 } from "@/lib/museum-layout";
 import { wingById } from "@/content";
+import { ContactShadow } from "./Decor";
+
+// Procedural Tuscan marble column — stepped base, slightly tapered shaft with
+// entasis, flared capital + square abacus. Replaces the cheap GLB baluster.
+function ProceduralColumn({
+  pos,
+  height: H,
+}: {
+  pos: [number, number, number];
+  height: number;
+}) {
+  const marble = "#eceae1";
+  const shaftH = H - 0.9;
+  return (
+    <group position={pos}>
+      <ContactShadow radius={0.62} />
+      {/* square plinth */}
+      <mesh position={[0, 0.09, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.84, 0.18, 0.84]} />
+        <meshStandardMaterial color={marble} roughness={0.6} metalness={0} />
+      </mesh>
+      {/* torus base */}
+      <mesh position={[0, 0.29, 0]} castShadow>
+        <cylinderGeometry args={[0.36, 0.46, 0.22, 28]} />
+        <meshStandardMaterial color={marble} roughness={0.55} metalness={0} />
+      </mesh>
+      {/* tapered shaft */}
+      <mesh position={[0, 0.4 + shaftH / 2, 0]} castShadow>
+        <cylinderGeometry args={[0.28, 0.34, shaftH, 28]} />
+        <meshStandardMaterial color={marble} roughness={0.5} metalness={0} />
+      </mesh>
+      {/* flared capital (echinus) */}
+      <mesh position={[0, H - 0.39, 0]} castShadow>
+        <cylinderGeometry args={[0.44, 0.28, 0.22, 28]} />
+        <meshStandardMaterial color={marble} roughness={0.55} metalness={0} />
+      </mesh>
+      {/* square abacus */}
+      <mesh position={[0, H - 0.22, 0]} castShadow>
+        <boxGeometry args={[0.94, 0.16, 0.94]} />
+        <meshStandardMaterial color={marble} roughness={0.6} metalness={0} />
+      </mesh>
+    </group>
+  );
+}
 
 // Subtle coffered-panel ceiling texture — light & architectural, never loud.
 function makeCeilingTexture(): THREE.CanvasTexture | null {
@@ -120,16 +165,16 @@ export default function Architecture() {
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fcx, 0, fcz]} receiveShadow>
         <planeGeometry args={[fw, fd]} />
         <MeshReflectorMaterial
-          resolution={512}
-          mixBlur={1.2}
-          mixStrength={2.4}
-          blur={[300, 90]}
-          roughness={0.68}
-          depthScale={1.1}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.3}
-          color="#42424a"
-          metalness={0.52}
+          resolution={256}
+          mixBlur={1}
+          mixStrength={1.5}
+          blur={[150, 50]}
+          roughness={0.78}
+          depthScale={0.8}
+          minDepthThreshold={0.5}
+          maxDepthThreshold={1.2}
+          color="#3f3f47"
+          metalness={0.45}
           mirror={0}
         />
       </mesh>
@@ -177,9 +222,15 @@ export default function Architecture() {
         <CrownMolding key={`c${i}`} seg={seg} />
       ))}
 
+      {/* entrance marble columns flanking the title wall */}
+      {COLUMNS.map((c, i) => (
+        <ProceduralColumn key={`col${i}`} pos={c.pos} height={c.height} />
+      ))}
+
       {/* minimal seating benches */}
       {BENCHES.map((b, i) => (
         <group key={i} position={b.pos}>
+          <ContactShadow radius={Math.max(b.size[0], b.size[2]) * 0.85} y={-b.pos[1] + 0.02} />
           <mesh castShadow receiveShadow>
             <boxGeometry args={b.size} />
             <meshStandardMaterial color="#26221d" roughness={0.55} metalness={0.1} />

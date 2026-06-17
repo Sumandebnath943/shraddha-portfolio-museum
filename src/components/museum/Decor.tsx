@@ -15,6 +15,37 @@ DECOR_FILES.forEach((f) => useGLTF.preload(f));
 
 const PLINTH_H = 0.9;
 
+// Shared soft contact-shadow blob — a cheap, baked-looking dark radial decal we
+// lay on the floor under props so they read as grounded. Far cheaper than real
+// dynamic shadow casting (no per-frame shadow map), which keeps the scene fast.
+let contactCache: THREE.CanvasTexture | null = null;
+export function getContactShadow(): THREE.CanvasTexture | null {
+  if (typeof document === "undefined") return null;
+  if (contactCache) return contactCache;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  g.addColorStop(0, "rgba(0,0,0,0.55)");
+  g.addColorStop(0.6, "rgba(0,0,0,0.22)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  contactCache = new THREE.CanvasTexture(c);
+  return contactCache;
+}
+
+export function ContactShadow({ radius, y = 0.02 }: { radius: number; y?: number }) {
+  const tex = useMemo(getContactShadow, []);
+  if (!tex) return null;
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]}>
+      <planeGeometry args={[radius * 2, radius * 2]} />
+      <meshBasicMaterial map={tex} transparent depthWrite={false} opacity={0.9} />
+    </mesh>
+  );
+}
+
 function DecorModel({ item }: { item: DecorItem }) {
   const { scene } = useGLTF(`/models/${item.slug}.glb`);
 
@@ -44,6 +75,8 @@ function DecorModel({ item }: { item: DecorItem }) {
 
   return (
     <group position={item.pos} rotation={[0, item.rotationY ?? 0, 0]}>
+      {/* grounding shadow on the floor below (account for pedestal lift) */}
+      <ContactShadow radius={Math.max(0.35, item.height * 0.28)} y={-item.pos[1] + 0.02} />
       {item.onPedestal && (
         <group position={[0, -PLINTH_H / 2, 0]}>
           {/* simple stone plinth so statues read as gallery objects */}

@@ -247,10 +247,10 @@ export type DecorSlug =
   | "snake-plant"
   | "houseplant"
   | "fern"
+  | "palm"
+  | "tree"
   | "horse-statue"
-  | "stag-statue"
-  | "pedestal"
-  | "column";
+  | "stag-statue";
 
 export interface DecorItem {
   slug: DecorSlug;
@@ -264,27 +264,43 @@ export interface DecorItem {
 const PEDESTAL_H = 0.9;
 
 export const DECOR: DecorItem[] = [
-  // — Entrance hall (z 13–24): grand, gallery-like welcome (no artworks here) —
-  { slug: "column", pos: [-7.2, 0, 22], height: 3.4, radius: 0.5 },
-  { slug: "column", pos: [7.2, 0, 22], height: 3.4, radius: 0.5 },
+  // — Entrance hall (z 13–24): grand, gallery-like welcome (no artworks here).
+  //   Columns here are procedural (see Architecture) — these are statues + big foliage. —
   { slug: "horse-statue", pos: [-7.6, PEDESTAL_H, 17.5], height: 1.1, rotationY: Math.PI / 2, onPedestal: true, radius: 0.55 },
   { slug: "stag-statue", pos: [7.6, PEDESTAL_H, 17.5], height: 1.2, rotationY: -Math.PI / 2, onPedestal: true, radius: 0.55 },
-  { slug: "monstera-large", pos: [-10.4, 0, 14.5], height: 1.8, radius: 0.45 },
-  { slug: "monstera-large", pos: [10.4, 0, 14.5], height: 1.8, radius: 0.45 },
+  { slug: "tree", pos: [-10.6, 0, 14.8], height: 3.0, radius: 0.5 }, // big indoor tree
+  { slug: "tree", pos: [10.6, 0, 14.8], height: 3.0, radius: 0.5 },
+  { slug: "monstera-large", pos: [-10.6, 0, 20.5], height: 2.0, radius: 0.4 },
+  { slug: "monstera-large", pos: [10.6, 0, 20.5], height: 2.0, radius: 0.4 },
 
-  // — Bay corners: one plant each, tucked by the far wall so it frames the art —
-  { slug: "fern", pos: [-18.6, 0, 0.6], height: 1.1, radius: 0 },
-  { slug: "snake-plant", pos: [18.6, 0, 0.6], height: 1.4, radius: 0 },
-  { slug: "houseplant", pos: [-18.6, 0, -30.2], height: 0.9, radius: 0 },
-  { slug: "monstera", pos: [18.6, 0, -30.2], height: 1.3, radius: 0 },
+  // — Bay corners: a tall plant in each, tucked by the far wall to frame the art —
+  { slug: "palm", pos: [-18.7, 0, 0.7], height: 2.6, radius: 0 },
+  { slug: "palm", pos: [18.7, 0, 0.7], height: 2.6, radius: 0 },
+  { slug: "monstera-large", pos: [-18.7, 0, 12.2], height: 2.0, radius: 0 },
+  { slug: "monstera-large", pos: [18.7, 0, 12.2], height: 2.0, radius: 0 },
+  { slug: "palm", pos: [-18.7, 0, -30.4], height: 2.6, radius: 0 },
+  { slug: "snake-plant", pos: [18.7, 0, -30.4], height: 1.5, radius: 0 },
+  { slug: "fern", pos: [-18.7, 0, -18.0], height: 1.2, radius: 0 },
+  { slug: "monstera", pos: [18.7, 0, -18.0], height: 1.4, radius: 0 },
 
-  // — Information terminus: a pair flanking the feature wall —
-  { slug: "snake-plant", pos: [-10.8, 0, -64.4], height: 1.4, radius: 0 },
-  { slug: "monstera", pos: [10.8, 0, -64.4], height: 1.4, radius: 0 },
+  // — Information terminus: big foliage flanking the feature wall —
+  { slug: "tree", pos: [-10.9, 0, -64.4], height: 3.0, radius: 0 },
+  { slug: "tree", pos: [10.9, 0, -64.4], height: 3.0, radius: 0 },
+  { slug: "snake-plant", pos: [-7.5, 0, -53.6], height: 1.5, radius: 0 },
+  { slug: "snake-plant", pos: [7.5, 0, -53.6], height: 1.5, radius: 0 },
 
-  // — Nave: a single statue-on-plinth accent near the kiosk approach —
-  { slug: "fern", pos: [-3.3, 0, -45], height: 1.0, radius: 0 },
-  { slug: "fern", pos: [3.3, 0, -45], height: 1.0, radius: 0 },
+  // — Nave: ferns softening the long walk near the kiosk —
+  { slug: "fern", pos: [-3.4, 0, -45], height: 1.1, radius: 0 },
+  { slug: "fern", pos: [3.4, 0, -45], height: 1.1, radius: 0 },
+  { slug: "monstera", pos: [-3.4, 0, -8], height: 1.4, radius: 0 },
+  { slug: "monstera", pos: [3.4, 0, -8], height: 1.4, radius: 0 },
+];
+
+// Procedural marble columns flanking the entrance title wall (rendered in
+// Architecture, not from a GLB — the GLB column read as a cheap baluster).
+export const COLUMNS: { pos: [number, number, number]; height: number }[] = [
+  { pos: [-7.4, 0, 21.8], height: 4.0 },
+  { pos: [7.4, 0, 21.8], height: 4.0 },
 ];
 
 // Wing nameplate signage positions (on the far/feature wall of each bay).
@@ -325,6 +341,7 @@ function footprint(cx: number, cz: number, r: number): Seg[] {
 const PROP_SEGS: Seg[] = [
   ...footprint(KIOSK.pos[0], KIOSK.pos[2], KIOSK.radius),
   ...DECOR.filter((d) => (d.radius ?? 0) > 0).flatMap((d) => footprint(d.pos[0], d.pos[2], d.radius!)),
+  ...COLUMNS.flatMap((c) => footprint(c.pos[0], c.pos[2], 0.45)),
 ];
 
 const COLLIDERS: Seg[] = [...WALLS, ...BENCH_SEGS, ...PROP_SEGS];
