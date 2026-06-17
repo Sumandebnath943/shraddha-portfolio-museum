@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "content": "tsx scripts/build-content.ts",
-    "ingest": "tsx scripts/ingest-ai.ts"
+    "ingest": "node --env-file=.env.local --import tsx scripts/ingest-ai.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
