@@ -1,26 +1,133 @@
 @import "tailwindcss";
 
+/* ──────────────────────────── Design system ────────────────────────────
+   Direction A — "Constellation". Deep navy / gold / cinematic.
+   A premium museum palette: warm off-white ink on deep space navy,
+   gold signage accents, and per-phase node hues.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #080b14;
+  --bg-2: #0c111e;
+  --ink: #ece9e0; /* warm off-white */
+  --ink-dim: #9aa0ad;
+  --ink-faint: #5d6473;
+  --gold: #c9a227;
+  --gold-bright: #e3c25b;
+  --line: rgba(236, 233, 224, 0.1);
+  --hairline: rgba(236, 233, 224, 0.16);
+
+  /* Per career-phase hues for constellation nodes */
+  --phase-foundation: #6f8cff;
+  --phase-production: #d8973f;
+  --phase-identity: #c9a227;
+  --phase-integrated: #4fb39a;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-gold: var(--gold);
+  --font-serif: var(--font-cormorant);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+}
+
+/* Museum signage: wide-tracked caps */
+.signage {
+  font-family: var(--font-cormorant), Georgia, serif;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.eyebrow {
+  font-family: var(--font-geist-sans), sans-serif;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+.display {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  line-height: 1.04;
+}
+
+/* Thin, elegant scrollbars inside panels */
+.fancy-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+}
+.fancy-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.fancy-scroll::-webkit-scrollbar-thumb {
+  background: var(--hairline);
+  border-radius: 99px;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* constellation node beacon — a slow expanding ring inviting a click */
+@keyframes node-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+/* light travelling along the spine connections */
+@keyframes spine-flow {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+.spine-flow {
+  stroke-dasharray: 2 18;
+  animation: spine-flow 3.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }
