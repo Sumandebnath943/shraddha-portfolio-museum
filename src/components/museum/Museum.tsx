@@ -91,6 +91,7 @@ export default function Museum() {
   const kioskOpen = useMuseum((s) => s.kioskOpen);
   const setKioskOpen = useMuseum((s) => s.setKioskOpen);
   const chatOpen = useMuseum((s) => s.chatOpen);
+  const setChatOpen = useMuseum((s) => s.setChatOpen);
   const seatIndex = useMuseum((s) => s.seatIndex);
   const seated = useMuseum((s) => s.seated);
   const autoPanning = useMuseum((s) => s.autoPanning);
@@ -147,8 +148,13 @@ export default function Museum() {
   // press E while standing at the kiosk → open the download panel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "KeyE") return;
       const st = useMuseum.getState();
+      // C summons the guide + opens the chat (works while the pointer is locked)
+      if (e.code === "KeyC") {
+        if (!st.chatOpen && !st.selected && !st.kioskOpen) setChatOpen(true);
+        return;
+      }
+      if (e.code !== "KeyE") return;
       if (locked && st.nearKiosk && !st.kioskOpen && !st.selected) {
         setKioskOpen(true);
         controls.current?.unlock();
@@ -156,7 +162,7 @@ export default function Museum() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [locked, setKioskOpen]);
+  }, [locked, setKioskOpen, setChatOpen]);
 
   // opening the chat releases the pointer (so the visitor can type); closing
   // it re-locks and resumes the walk.
