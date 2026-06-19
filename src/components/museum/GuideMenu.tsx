@@ -14,6 +14,16 @@ export default function GuideMenu() {
   const setGuideTarget = useMuseum((s) => s.setGuideTarget);
   const setBubble = useMuseum((s) => s.setBubble);
 
+  // auto-dismiss the prompt after ~10s so it doesn't sit on screen forever
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => {
+      setGuideMenuOpen(false);
+      setBubble("");
+    }, 10000);
+    return () => window.clearTimeout(t);
+  }, [open, setGuideMenuOpen, setBubble]);
+
   useEffect(() => {
     if (!open) return;
     const pick = (i: number) => {

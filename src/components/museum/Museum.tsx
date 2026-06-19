@@ -94,16 +94,18 @@ function Scene({ onReady }: { onReady: () => void }) {
         />
       ))}
 
-      {/* hero light: a warm spotlight washing her name on the entrance title wall */}
+      {/* hero light: a warm spotlight washing her ENTIRE name on the title wall.
+          Wide cone + low penumbra so the whole "SHRADDHA SONEL" is lit, not just
+          the middle. */}
       <primitive object={heroTarget} />
       <spotLight
         ref={heroRef}
-        position={[0, 4.7, 21.0]}
-        angle={0.6}
-        penumbra={0.85}
-        distance={11}
+        position={[0, 4.6, 21.2]}
+        angle={1.2}
+        penumbra={0.35}
+        distance={13}
         decay={2}
-        intensity={46}
+        intensity={54}
         color="#ffeccb"
         castShadow={false}
       />
@@ -133,20 +135,23 @@ export default function Museum() {
   const entered = useMuseum((s) => s.entered);
   const setEntered = useMuseum((s) => s.setEntered);
   const freeLook = useMuseum((s) => s.freeLook);
-  const setFreeLook = useMuseum((s) => s.setFreeLook);
-  // Pointer Lock is unavailable in some contexts (embedded preview panes, certain
-  // permissions policies). Detect it up front; if blocked we enter in a no-lock
-  // "free look" mode (steer with the cursor) so the museum is always reachable.
-  const [pointerLockOK] = useState(() => {
-    if (typeof document === "undefined") return true;
-    try {
-      const fp = (document as Document & { featurePolicy?: { allowsFeature(f: string): boolean } }).featurePolicy;
-      if (fp && typeof fp.allowsFeature === "function") return fp.allowsFeature("pointer-lock");
-    } catch {
-      /* ignore */
-    }
-    return typeof document.body.requestPointerLock === "function";
-  });
+  // Truthful, RUNTIME detection of pointer-lock availability. We always attempt a
+  // real lock and let the browser decide: `pointerlockerror` → fall back to
+  // free-look (steer by cursor); a successful lock clears it. (featurePolicy lies
+  // in some browsers — reporting "blocked" even when lock works — which previously
+  // left us in free-look WHILE the pointer was actually locked, freezing the view.)
+  useEffect(() => {
+    const onErr = () => useMuseum.getState().setFreeLook(true);
+    const onChange = () => {
+      if (document.pointerLockElement) useMuseum.getState().setFreeLook(false);
+    };
+    document.addEventListener("pointerlockerror", onErr);
+    document.addEventListener("pointerlockchange", onChange);
+    return () => {
+      document.removeEventListener("pointerlockerror", onErr);
+      document.removeEventListener("pointerlockchange", onChange);
+    };
+  }, []);
   const nearby = useMuseum((s) => s.nearby);
   const selected = useMuseum((s) => s.selected);
   const setSelected = useMuseum((s) => s.setSelected);
@@ -215,12 +220,12 @@ export default function Museum() {
       const st = useMuseum.getState();
       if ((locked || st.freeLook) && st.nearby && !st.selected && !st.nearKiosk) {
         setSelected(st.nearby);
-        if (pointerLockOK) controls.current?.unlock();
+        controls.current?.unlock();
       }
     };
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
-  }, [locked, setSelected, pointerLockOK]);
+  }, [locked, setSelected]);
 
   // press E while standing at the kiosk → open the download panel
   useEffect(() => {
@@ -237,7 +242,7 @@ export default function Museum() {
           st.setSpeaking(false);
           st.setListening(false);
           st.setBubble("");
-          if (pointerLockOK) controls.current?.lock();
+          controls.current?.lock();
         }
         return;
       }
@@ -257,36 +262,36 @@ export default function Museum() {
       if (e.code !== "KeyE") return;
       if ((locked || st.freeLook) && st.nearKiosk && !st.kioskOpen && !st.selected) {
         setKioskOpen(true);
-        if (pointerLockOK) controls.current?.unlock();
+        controls.current?.unlock();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [locked, setKioskOpen, setChatOpen, pointerLockOK]);
+  }, [locked, setKioskOpen, setChatOpen]);
 
-  // opening the chat releases the pointer (so the visitor can type); closing
-  // it re-locks and resumes the walk. (No-op when pointer lock is unavailable;
-  // free-look pauses via the chatOpen "frozen" check in Player.)
+  // opening the chat releases the pointer (so the visitor can type); closing it
+  // re-locks and resumes the walk. (Harmless if lock is unavailable — it just
+  // errors and free-look stays engaged; free-look pauses via the chatOpen
+  // "frozen" check in Player.)
   useEffect(() => {
-    if (!pointerLockOK) return;
     if (chatOpen) controls.current?.unlock();
     else if (entered) controls.current?.lock();
-  }, [chatOpen, entered, pointerLockOK]);
+  }, [chatOpen, entered]);
 
   const closeKiosk = () => {
     setKioskOpen(false);
-    if (pointerLockOK) controls.current?.lock();
+    controls.current?.lock();
   };
 
   const enter = () => {
     if (!fullyReady && !entered) return; // wait until everything is fully loaded
     setEntered(true);
-    if (pointerLockOK) controls.current?.lock();
-    else setFreeLook(true); // no pointer lock here → enter in cursor-steer mode
+    // attempt a real lock; if the browser refuses, pointerlockerror → free-look
+    controls.current?.lock();
   };
   const closePlacard = () => {
     setSelected(null);
-    if (pointerLockOK) controls.current?.lock();
+    controls.current?.lock();
   };
 
   return (
@@ -307,6 +312,11 @@ export default function Museum() {
         </Suspense>
         <PointerLockControls
           ref={controls}
+          // `selector` points at a non-existent element so drei does NOT auto-lock
+          // on every document click. We lock explicitly (Enter/Resume/placard/kiosk/
+          // chat-close) — otherwise stray clicks re-lock the pointer while the chat
+          // is open, which hijacks Esc (it exits the lock instead of closing chat).
+          selector="#__no_autolock__"
           onLock={() => setLocked(true)}
           onUnlock={() => setLocked(false)}
         />
@@ -367,7 +377,7 @@ export default function Museum() {
               <>Seated &nbsp;·&nbsp; Hold still and the view will pan &nbsp;·&nbsp; E or W A S D · Stand</>
             )
           ) : freeLook ? (
-            <>W A S D · Move &nbsp;·&nbsp; Move cursor to the edges · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; C · Ask</>
+            <>W A S D · Move &nbsp;·&nbsp; Move cursor to the edges · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; C · Ask &nbsp;·&nbsp; V · Speak</>
           ) : (
             <>W A S D · Move &nbsp;·&nbsp; Mouse · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; C · Ask &nbsp;·&nbsp; V · Speak &nbsp;·&nbsp; Esc · Release</>
           )}

@@ -9,6 +9,15 @@ import { useMuseum } from "@/store/museum";
 // floating thought-bubble above her head (see Assistant.tsx). Voice is layered
 // on with the free browser Web Speech API: she SPEAKS her replies (TTS, toggle
 // in the header) and you can ASK by voice (STT, the mic button / the "V" key).
+// One-tap starter questions shown in the empty chat. Tapping one sends it.
+const SUGGESTIONS = [
+  "How much experience does Shraddha have?",
+  "What kinds of design does she specialise in?",
+  "Where is Shraddha working now?",
+  "Is she open to opportunities?",
+  "What salary is she expecting?",
+];
+
 export default function AssistantChat() {
   const chatOpen = useMuseum((s) => s.chatOpen);
   const messages = useMuseum((s) => s.messages);
@@ -52,7 +61,7 @@ export default function AssistantChat() {
     if (!useMuseum.getState().voiceOn) return;
     const u = new SpeechSynthesisUtterance(text);
     if (voiceRef.current) u.voice = voiceRef.current;
-    u.rate = 1.02;
+    u.rate = 1.14; // snappier delivery — the default felt sluggish in voice chat
     u.pitch = 1.05;
     pending.current += 1;
     const done = () => {
@@ -258,13 +267,21 @@ export default function AssistantChat() {
   }
 
   return (
-    <div className="pointer-events-auto absolute bottom-6 right-6 z-30 flex h-[60vh] max-h-[460px] w-[340px] max-w-[88vw] flex-col overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--bg-2)]/95 shadow-2xl backdrop-blur">
-      <div className="flex items-center justify-between border-b border-[var(--hairline)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${speaking ? "animate-pulse bg-[var(--gold-bright)]" : "bg-[var(--ink-dim)]"}`}
-          />
-          <span className="signage text-sm text-[var(--ink)]">Shraddha&apos;s Assistant</span>
+    <div className="pointer-events-auto absolute bottom-6 right-6 z-30 flex h-[62vh] max-h-[480px] w-[360px] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-[var(--gold)]/25 bg-[var(--bg-2)]/95 shadow-2xl ring-1 ring-black/30 backdrop-blur-md">
+      <div className="flex items-center justify-between border-b border-[var(--hairline)] bg-gradient-to-b from-[var(--gold)]/10 to-transparent px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-[var(--gold)]/15 text-[0.72rem] text-[var(--gold-bright)] ring-1 ring-[var(--gold)]/40">
+            S
+            {speaking && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-[var(--gold-bright)]" />
+            )}
+          </span>
+          <div className="flex flex-col leading-tight">
+            <span className="signage text-sm text-[var(--ink)]">Shraddha&apos;s Guide</span>
+            <span className="text-[0.58rem] tracking-[0.16em] text-[var(--ink-dim)] uppercase">
+              {speaking ? "Speaking…" : "Gallery assistant"}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -288,10 +305,26 @@ export default function AssistantChat() {
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
-          <p className="display text-sm italic leading-relaxed text-[var(--ink-dim)]">
-            Hello, and welcome. Ask me anything about Shraddha&apos;s work — a piece you&apos;re
-            looking at, a wing, or her career. You can type or tap the mic to speak.
-          </p>
+          <div className="space-y-4">
+            <p className="display text-sm italic leading-relaxed text-[var(--ink-dim)]">
+              Hello, and welcome. Ask me anything about Shraddha&apos;s work — a piece you&apos;re
+              looking at, a wing, or her career. Type, tap a question below, or use the mic.
+            </p>
+            <div className="flex flex-col gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => send(s)}
+                  className="group flex items-center gap-2 rounded-xl border border-[var(--hairline)] bg-[var(--bg)]/40 px-3.5 py-2.5 text-left text-[0.82rem] leading-snug text-[var(--ink)] transition-colors hover:border-[var(--gold)]/70 hover:bg-[var(--gold)]/10"
+                >
+                  <span className="text-[var(--gold-bright)] opacity-70 transition-opacity group-hover:opacity-100">
+                    ↗
+                  </span>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>

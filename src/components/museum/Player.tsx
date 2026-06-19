@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { collide, EYE_H, SPAWN, SEATS } from "@/lib/museum-layout";
-import { playerPos, playerDir, useMuseum } from "@/store/museum";
+import { playerPos, playerDir, assistantPos, useMuseum } from "@/store/museum";
 
 const SPEED = 3.6;
 const ACCEL = 9;
@@ -131,8 +131,10 @@ export default function Player() {
     const frozen = st.selected !== null || st.kioskOpen || st.chatOpen;
 
     // no-pointer-lock fallback: steer the view with the cursor (centre = still,
-    // toward the edges = turn). Runs only when free-look mode is engaged.
-    if (st.freeLook && !frozen) {
+    // toward the edges = turn). Runs ONLY when free-look is engaged AND the pointer
+    // is NOT actually locked — otherwise it would fight PointerLockControls and
+    // freeze the view (the regression).
+    if (st.freeLook && !frozen && document.pointerLockElement === null) {
       if (!lookInit.current) {
         yaw.current = camera.rotation.y;
         pitch.current = camera.rotation.x;
@@ -173,6 +175,16 @@ export default function Player() {
     let nx = camera.position.x + vel.current.x * dt;
     let nz = camera.position.z + vel.current.z * dt;
     [nx, nz] = collide(nx, nz);
+
+    // don't walk through the guide — push out of her personal radius
+    const adx = nx - assistantPos.x;
+    const adz = nz - assistantPos.z;
+    const ad = Math.hypot(adx, adz);
+    const PERSONAL = 0.7;
+    if (ad < PERSONAL && ad > 1e-4) {
+      nx = assistantPos.x + (adx / ad) * PERSONAL;
+      nz = assistantPos.z + (adz / ad) * PERSONAL;
+    }
 
     camera.position.set(nx, EYE_H, nz);
     playerPos.set(nx, EYE_H, nz);

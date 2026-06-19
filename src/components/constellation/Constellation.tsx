@@ -41,8 +41,16 @@ export default function Constellation() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const st = useConstellation.getState();
+    // Returning here (e.g. Back from the museum) must show a FRESH landing — not
+    // the leftover end-of-entry warp/burst. The store persists across client
+    // navigations, so reset the transient flags and replay the intro.
+    st.setWarping(false);
+    st.setFaceFormed(false);
+    st.setSelected(null);
+    st.pause(); // playing=false, focusedId=null
+    st.setMode("intro");
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const st = useConstellation.getState();
       st.setReducedMotion(true);
       st.setMode("explore");
     }
