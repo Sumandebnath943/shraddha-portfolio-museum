@@ -1,5 +1,5 @@
-import Timeline from "@/components/timeline/Timeline";
+import Constellation from "@/components/constellation/Constellation";
 
 export default function Home() {
-  return <Timeline />;
+  return <Constellation />;
 }

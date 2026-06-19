@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { PointerLockControls, AdaptiveDpr, BakeShadows } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
@@ -10,17 +10,39 @@ import Link from "next/link";
 import type { PointerLockControls as PLC } from "three-stdlib";
 import Architecture from "./Architecture";
 import Player from "./Player";
-import Exhibit, { ExhibitPicker } from "./Exhibit";
+import Exhibit, { ExhibitPicker, SpotlightPool } from "./Exhibit";
 import Decor, { DECOR_FILES } from "./Decor";
 import Kiosk from "./Kiosk";
 import Assistant, { ASSISTANT_URL } from "./Assistant";
 import AssistantChat from "./AssistantChat";
+import GuideMenu from "./GuideMenu";
 import MuseumPlacard from "./MuseumPlacard";
 import { getPlacements } from "@/lib/museum-layout";
 import { getExhibits } from "@/content";
 import { useMuseum } from "@/store/museum";
 
-function Scene() {
+// Mounts only once everything inside <Suspense> has resolved (all GLB models
+// loaded). It then precompiles the scene's shaders against the current lights —
+// including the spotlight pool — and signals ready a couple of frames later, so
+// the "Enter" button never appears (and you never drop in) mid-load.
+function SceneReady({ onReady }: { onReady: () => void }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    gl.compile(scene, camera);
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(onReady);
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [gl, scene, camera, onReady]);
+  return null;
+}
+
+function Scene({ onReady }: { onReady: () => void }) {
   const placements = useMemo(() => getPlacements(), []);
   return (
     <>
@@ -69,9 +91,11 @@ function Scene() {
       {placements.map((p) => (
         <Exhibit key={p.exhibit.slug} p={p} />
       ))}
+      <SpotlightPool placements={placements} />
       <ExhibitPicker />
       <Player />
       <BakeShadows />
+      <SceneReady onReady={onReady} />
     </>
   );
 }
@@ -96,7 +120,12 @@ export default function Museum() {
   const seated = useMuseum((s) => s.seated);
   const autoPanning = useMuseum((s) => s.autoPanning);
   const [ready, setReady] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
   const [progress, setProgress] = useState(0);
+  const onSceneReady = useCallback(() => setSceneReady(true), []);
+  // the museum is only truly enterable once BOTH the assets are fetched (the
+  // progress bar) AND the 3D scene has mounted + precompiled its shaders.
+  const fullyReady = ready && sceneReady;
 
   // Preload every exhibit image up front so the walk is hitch-free (no
   // textures streaming in while you move). Warms THREE's cache; the in-scene
@@ -149,9 +178,32 @@ export default function Museum() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useMuseum.getState();
+      // Esc closes the chat and RESUMES the walk. The re-lock must happen right
+      // here in the keydown gesture — if deferred to an effect the browser has
+      // already dropped the user-activation and refuses pointer lock, dumping
+      // you on the pause gate (the bug). Closing it here keeps you in the museum.
+      if (e.code === "Escape") {
+        if (st.chatOpen) {
+          e.preventDefault();
+          st.setChatOpen(false);
+          st.setSpeaking(false);
+          st.setListening(false);
+          st.setBubble("");
+          controls.current?.lock();
+        }
+        return;
+      }
       // C summons the guide + opens the chat (works while the pointer is locked)
       if (e.code === "KeyC") {
         if (!st.chatOpen && !st.selected && !st.kioskOpen) setChatOpen(true);
+        return;
+      }
+      // V opens the chat and starts listening — ask the guide by voice
+      if (e.code === "KeyV") {
+        if (!st.chatOpen && !st.selected && !st.kioskOpen) {
+          setChatOpen(true);
+          st.setListening(true);
+        }
         return;
       }
       if (e.code !== "KeyE") return;
@@ -177,7 +229,7 @@ export default function Museum() {
   };
 
   const enter = () => {
-    if (!ready && !entered) return; // wait until everything is preloaded
+    if (!fullyReady && !entered) return; // wait until everything is fully loaded
     setEntered(true);
     controls.current?.lock();
   };
@@ -200,7 +252,7 @@ export default function Museum() {
         }}
       >
         <Suspense fallback={null}>
-          <Scene />
+          <Scene onReady={onSceneReady} />
         </Suspense>
         <PointerLockControls
           ref={controls}
@@ -264,7 +316,7 @@ export default function Museum() {
               <>Seated &nbsp;·&nbsp; Hold still and the view will pan &nbsp;·&nbsp; E or W A S D · Stand</>
             )
           ) : (
-            <>W A S D · Move &nbsp;·&nbsp; Mouse · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; Esc · Release</>
+            <>W A S D · Move &nbsp;·&nbsp; Mouse · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; C · Ask &nbsp;·&nbsp; V · Speak &nbsp;·&nbsp; Esc · Release</>
           )}
         </p>
       )}
@@ -297,7 +349,7 @@ export default function Museum() {
               ? "Click to resume your walk through the galleries."
               : "A walkable museum of brand identity, print, social, marketing & information design."}
           </p>
-          {entered || ready ? (
+          {entered || fullyReady ? (
             <button
               id="lock-trigger"
               onClick={enter}
@@ -310,13 +362,17 @@ export default function Museum() {
               <div className="h-px w-56 overflow-hidden bg-[var(--hairline)]">
                 <div
                   className="h-full bg-[var(--gold)] transition-[width] duration-300 ease-out"
-                  style={{ width: `${Math.round(progress * 100)}%` }}
+                  style={{ width: `${ready ? 100 : Math.round(progress * 100)}%` }}
                 />
               </div>
-              <p className="eyebrow">Preparing the galleries · {Math.round(progress * 100)}%</p>
+              <p className="eyebrow">
+                {ready
+                  ? "Building the galleries · almost there"
+                  : `Preparing the galleries · ${Math.round(progress * 100)}%`}
+              </p>
             </div>
           )}
-          {(entered || ready) && (
+          {(entered || fullyReady) && (
             <p className="eyebrow opacity-70">Move with WASD · Look with the mouse</p>
           )}
         </div>
@@ -365,6 +421,7 @@ export default function Museum() {
       )}
 
       {entered && <AssistantChat />}
+      {entered && <GuideMenu />}
 
       <MuseumPlacard onClose={closePlacard} />
     </div>

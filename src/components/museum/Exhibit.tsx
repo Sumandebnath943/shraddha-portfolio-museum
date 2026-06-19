@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
@@ -56,14 +56,8 @@ export default function Exhibit({ p }: { p: ExhibitPlacement }) {
 
   const poolTex = useMemo(getPoolTexture, []);
   const matRef = useRef<THREE.MeshStandardMaterial>(null);
-  const spotRef = useRef<THREE.SpotLight>(null);
-  const targetRef = useRef<THREE.Object3D>(null);
   const canvasRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
-  // only mount this exhibit's spotlight when the visitor is near (perf: keeps
-  // the number of active lights low instead of all 28 at once)
-  const litRef = useRef(false);
-  const [lit, setLit] = useState(false);
 
   const worldPos = useRef(new THREE.Vector3(pos[0], pos[1], pos[2]));
 
@@ -103,33 +97,12 @@ export default function Exhibit({ p }: { p: ExhibitPlacement }) {
     };
   }, [e.slug]);
 
-  // assign spotlight target (re-runs when the light (re)mounts on approach)
-  useEffect(() => {
-    if (spotRef.current && targetRef.current) {
-      spotRef.current.target = targetRef.current;
-    }
-  }, [lit]);
-
   useFrame(() => {
     const dist = playerPos.distanceTo(worldPos.current);
-    const near = dist < 7;
-    // Only mount a real spotlight for pieces in the immediate vicinity (the bay
-    // you're standing in) — the always-on wall "pool" keeps everything else
-    // reading as lit. This keeps the live light count to a handful instead of
-    // ~20 at once, which is the main framerate win in forward rendering.
-    const want = dist < (litRef.current ? 9.5 : 8);
-    if (want !== litRef.current) {
-      litRef.current = want;
-      setLit(want);
-    }
-    // spotlight pool: bright base, brightens further as you approach
-    if (spotRef.current) {
-      const t = THREE.MathUtils.clamp(1 - (dist - 3) / 14, 0.7, 1);
-      spotRef.current.intensity = THREE.MathUtils.lerp(spotRef.current.intensity, 30 * t, 0.07);
-    }
-    // gentle frame emphasis when in range
+    // gentle frame emphasis when in range (the live spotlight is now provided
+    // by the shared SpotlightPool, which roves to whichever pieces are nearest)
     if (groupRef.current) {
-      const target = near ? 1.012 : 1;
+      const target = dist < 7 ? 1.012 : 1;
       const s = THREE.MathUtils.lerp(groupRef.current.scale.x, target, 0.1);
       groupRef.current.scale.setScalar(s);
     }
@@ -190,23 +163,6 @@ export default function Exhibit({ p }: { p: ExhibitPlacement }) {
         </mesh>
       </group>
 
-      {/* dedicated spotlight pool — emitted from the fixture, only mounted near */}
-      {lit && (
-        <>
-          <spotLight
-            ref={spotRef}
-            position={[0, fixtureY, fixtureZ]}
-            angle={0.4}
-            penumbra={0.55}
-            distance={11}
-            intensity={14}
-            color={"#fff3df"}
-            castShadow={false}
-          />
-          <object3D ref={targetRef} position={[0, 0, 0]} />
-        </>
-      )}
-
       {/* wall label — a printed "tombstone" card, the way galleries do it: a
           small pale panel with crisp dark sans-serif text (high contrast, clear
           hierarchy). Centred just below the frame on otherwise-empty wall, so it
@@ -258,6 +214,98 @@ export default function Exhibit({ p }: { p: ExhibitPlacement }) {
         </Text>
       </group>
     </group>
+  );
+}
+
+// Shared, fixed-size pool of real spotlights that rove to whichever pieces are
+// nearest the visitor. Mounting/unmounting lights per-exhibit (the old approach)
+// changed the scene's spotlight count constantly, forcing THREE to *recompile*
+// every lit material on approach — the stutter you felt nearing each artwork.
+// A constant light count means the shaders compile once (up front) and never
+// again, so roving these few lights is hitch-free. Distant pieces still read as
+// lit via the always-on wall wash, so the feature is unchanged visually.
+const POOL_SIZE = 4;
+const SPOT_RANGE = 11; // a pool light only illuminates pieces within this radius
+
+export function SpotlightPool({ placements }: { placements: ExhibitPlacement[] }) {
+  const fixtures = useMemo(
+    () =>
+      placements.map((p) => {
+        const [nx, nz] = p.normal;
+        return {
+          fx: p.pos[0] + nx * fixtureZ, // light source @ the ceiling track-light
+          fy: ART_CENTER_Y + fixtureY,
+          fz: p.pos[2] + nz * fixtureZ,
+          tx: p.pos[0], // aim point @ the artwork centre
+          tz: p.pos[2],
+        };
+      }),
+    [placements],
+  );
+
+  const lights = useRef<(THREE.SpotLight | null)[]>([]);
+  const targets = useRef<(THREE.Object3D | null)[]>([]);
+  const order = useRef<number[]>([]);
+
+  useEffect(() => {
+    lights.current.forEach((l, i) => {
+      const t = targets.current[i];
+      if (l && t) l.target = t;
+    });
+  }, []);
+
+  useFrame(() => {
+    const px = playerPos.x;
+    const pz = playerPos.z;
+    const ord = order.current;
+    ord.length = fixtures.length;
+    for (let i = 0; i < fixtures.length; i++) ord[i] = i;
+    ord.sort(
+      (a, b) =>
+        (fixtures[a].tx - px) ** 2 + (fixtures[a].tz - pz) ** 2 -
+        ((fixtures[b].tx - px) ** 2 + (fixtures[b].tz - pz) ** 2),
+    );
+    for (let s = 0; s < POOL_SIZE; s++) {
+      const light = lights.current[s];
+      const tgt = targets.current[s];
+      if (!light || !tgt) continue;
+      const fx = fixtures[ord[s]];
+      if (!fx) {
+        light.intensity = THREE.MathUtils.lerp(light.intensity, 0, 0.12);
+        continue;
+      }
+      const dist = Math.hypot(fx.tx - px, fx.tz - pz);
+      light.position.set(fx.fx, fx.fy, fx.fz);
+      tgt.position.set(fx.tx, ART_CENTER_Y, fx.tz);
+      tgt.updateMatrixWorld();
+      const want = dist > SPOT_RANGE ? 0 : 30 * THREE.MathUtils.clamp(1 - (dist - 3) / 14, 0.55, 1);
+      light.intensity = THREE.MathUtils.lerp(light.intensity, want, 0.12);
+    }
+  });
+
+  return (
+    <>
+      {Array.from({ length: POOL_SIZE }).map((_, i) => (
+        <group key={i}>
+          <spotLight
+            ref={(el) => {
+              lights.current[i] = el;
+            }}
+            angle={0.4}
+            penumbra={0.55}
+            distance={11}
+            intensity={0}
+            color="#fff3df"
+            castShadow={false}
+          />
+          <object3D
+            ref={(el) => {
+              targets.current[i] = el;
+            }}
+          />
+        </group>
+      ))}
+    </>
   );
 }
 

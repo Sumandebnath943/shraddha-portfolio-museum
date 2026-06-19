@@ -4,11 +4,22 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations, Html } from "@react-three/drei";
 import * as THREE from "three";
-import { ASSISTANT, ASSISTANT_NAV, collide, EYE_H } from "@/lib/museum-layout";
+import { ASSISTANT, ASSISTANT_NAV, WING_TO_NODE, collide, EYE_H } from "@/lib/museum-layout";
 import { playerPos, playerDir, assistantPos, useMuseum } from "@/store/museum";
+import { getExhibits, wingById } from "@/content";
 
 export const ASSISTANT_URL = "/models/assistant.glb";
 useGLTF.preload(ASSISTANT_URL);
+
+// One-line docent insight per piece, for the "linger → comment" behaviour.
+// Trimmed to a single sentence so it fits the thought-bubble.
+function firstSentence(s: string): string {
+  const m = s.match(/^.*?[.!?](\s|$)/);
+  return (m ? m[0] : s).trim();
+}
+const INSIGHTS: Record<string, string> = Object.fromEntries(
+  getExhibits().map((e) => [e.slug, firstSentence(e.insight || e.overview || "")]),
+);
 
 // The Mixamo mesh faces +Z at rotation 0.
 const FORWARD = 0;
@@ -57,22 +68,23 @@ function nearestNode(x: number, z: number): number {
 
 export default function Assistant() {
   const group = useRef<THREE.Group>(null);
+  const inner = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF(ASSISTANT_URL);
   const { actions } = useAnimations(animations, group);
 
-  // Scale + floor from the SKELETON (the skinned-mesh bounding box is unreliable
-  // once posed). Put her head bone ≈ the player's eye height (so eyes line up)
-  // and her feet on the floor; centre her on the hips.
+  // Size + ground her once from the bind pose: scale by total height so her eyes
+  // meet the player's, centre her on the hips, and collect the foot bones so the
+  // frame loop can keep her planted on the floor whatever the animation does.
   const norm = useMemo(() => {
     scene.updateWorldMatrix(true, true);
     const v = new THREE.Vector3();
     let footY = Infinity;
-    let head: THREE.Object3D | null = null;
     let hips: THREE.Object3D | null = null;
+    const feet: THREE.Object3D[] = [];
     scene.traverse((o) => {
-      if (o.name === "mixamorigHead") head = o;
       if (o.name === "mixamorigHips") hips = o;
       if ((o as THREE.Bone).isBone) {
+        if (/ToeBase/i.test(o.name)) feet.push(o);
         o.getWorldPosition(v);
         if (v.y < footY) footY = v.y;
       }
@@ -92,12 +104,14 @@ export default function Assistant() {
         }
       }
     });
-    let headY = footY + 1.6;
-    if (head) {
-      (head as THREE.Object3D).getWorldPosition(v);
-      headY = v.y;
-    }
-    const s = (EYE_H + 0.05) / Math.max(0.1, headY - footY); // head bone → ~eye level
+    // Scale from the bind-pose BOUNDING BOX (reliable while un-posed): the head
+    // *bone* sits well below the crown, so scaling "head bone → eye level" made
+    // her ~25% too tall. Instead size her whole height so her eyes (~94% of
+    // standing height) land at the player's eye height — natural 1:1 with the
+    // visitor. Per-frame foot grounding (see useFrame) keeps her feet planted.
+    const bb = new THREE.Box3().setFromObject(scene);
+    const modelH = Math.max(0.1, bb.max.y - bb.min.y);
+    const s = EYE_H / 0.94 / modelH; // total height ≈ EYE_H/0.94 → eyes ≈ EYE_H
     let cx = 0;
     let cz = 0;
     if (hips) {
@@ -105,7 +119,9 @@ export default function Assistant() {
       cx = v.x;
       cz = v.z;
     }
-    return { s, offset: new THREE.Vector3(-cx * s, -footY * s, -cz * s) };
+    // crown height once standing (feet on floor) → anchor for the thought bubble
+    const topY = (bb.max.y - footY) * s;
+    return { s, offset: new THREE.Vector3(-cx * s, -footY * s, -cz * s), feet, topY };
   }, [scene]);
 
   // behaviour state
@@ -115,6 +131,7 @@ export default function Assistant() {
   const queue = useRef<number[]>([]);
   const goalNode = useRef(-2);
   const roamDest = useRef(-1);
+  const roamToPlayer = useRef(false);
   const pauseUntil = useRef(0);
   const danceUntil = useRef(0);
   const greetDone = useRef(false);
@@ -122,6 +139,14 @@ export default function Assistant() {
   const followUntil = useRef(0);
   const prevChat = useRef(false);
   const ready = useRef(false);
+  // guided tour + commentary
+  const menuOfferAt = useRef(0); // when (after greet) to raise the wing menu
+  const menuOffered = useRef(false);
+  const bubbleUntil = useRef(0); // auto-expiry for transient bubbles (no chat/greet)
+  const lingerSlug = useRef<string | null>(null);
+  const lingerStart = useRef(0);
+  const commentCooldown = useRef(0);
+  const leadFor = useRef<string | null>(null); // wing she's currently announcing
 
   useEffect(() => {
     if (group.current && !ready.current) {
@@ -212,6 +237,25 @@ export default function Assistant() {
     const dt = Math.min(dtRaw, 0.05);
     const now = performance.now();
     const st = useMuseum.getState();
+
+    // Keep her grounded against the ACTUAL animated pose, not the bind pose the
+    // offset was baked from: plant the lowest foot bone on the floor (y=0) each
+    // frame. Without this she "floats" once an animation reposes the skeleton.
+    const inn = inner.current;
+    if (inn && norm.feet.length) {
+      let low = Infinity;
+      for (const f of norm.feet) {
+        f.getWorldPosition(tmpF.current);
+        if (tmpF.current.y < low) low = tmpF.current.y;
+      }
+      if (low !== Infinity && Number.isFinite(low)) inn.position.y -= low;
+    }
+
+    // Safety net: eject her from any wall/prop she's ended up inside (covers the
+    // odd corner case where a beeline or a re-pick clipped geometry). moveTo
+    // already collides per step; this guarantees she's never *in* a wall.
+    [g.position.x, g.position.z] = collide(g.position.x, g.position.z, ASSISTANT.radius);
+
     assistantPos.copy(g.position);
     const px = playerPos.x;
     const pz = playerPos.z;
@@ -226,20 +270,37 @@ export default function Assistant() {
       return;
     }
 
+    // transient bubbles (lead arrival lines, artwork commentary) auto-expire so
+    // they don't linger over her head; greet/chat manage their own text.
+    if (bubbleUntil.current && now > bubbleUntil.current) {
+      bubbleUntil.current = 0;
+      if (!st.chatOpen) st.setBubble("");
+    }
+
     // ── chat open → hurry to a spot front-LEFT of the player (clear of the
     //    bottom-right panel), then face them; Talk while replying ──
     if (st.chatOpen) {
       st.setAssistantMode("chat");
+      menuOffered.current = true; // she's already engaged → don't pop the menu later
       const f = tmpF.current.set(playerDir.x, 0, playerDir.z);
       const fl = f.length() || 1;
       f.multiplyScalar(1 / fl);
-      const spotX = px + f.x * 2.2 + f.z * 1.4; // + player's-left offset
-      const spotZ = pz + f.z * 2.2 - f.x * 1.4;
-      if (Math.hypot(spotX - g.position.x, spotZ - g.position.z) > 0.8) {
+      // a step in front of the visitor and to THEIR LEFT — the chat panel sits
+      // bottom-right, so this keeps her in clear view on the left of the screen.
+      // Clamp to a wall-free spot so she never tries to stand inside geometry.
+      let spotX = px + f.x * 1.8 + f.z * 1.5;
+      let spotZ = pz + f.z * 1.8 - f.x * 1.5;
+      [spotX, spotZ] = collide(spotX, spotZ, ASSISTANT.radius);
+      const atSpot = Math.hypot(spotX - g.position.x, spotZ - g.position.z) <= 0.6;
+      if (st.speaking) {
+        // she's replying → stop and talk to the visitor, wherever she is
+        faceTo(g, px, pz, dt, 8);
+        play("Talk");
+      } else if (!atSpot) {
         navTo(g, spotX, spotZ, ASSISTANT.hurrySpeed, dt);
       } else {
         faceTo(g, px, pz, dt, 8);
-        play(st.speaking ? "Talk" : idleAnim(now));
+        play(idleAnim(now));
       }
       return;
     }
@@ -263,6 +324,53 @@ export default function Assistant() {
       return;
     }
 
+    // ── a few seconds after greeting, offer to guide the visitor somewhere ──
+    if (menuOfferAt.current === 0) menuOfferAt.current = now + 3500;
+    if (!menuOffered.current && now > menuOfferAt.current && !st.guideTarget) {
+      menuOffered.current = true;
+      st.setGuideMenuOpen(true);
+      st.setBubble("Where would you like to go? Pick a gallery — or keep exploring.");
+    }
+
+    // ── menu is up → wait attentively beside the visitor while they choose ──
+    if (st.guideMenuOpen) {
+      st.setAssistantMode("menu");
+      if (dist > 3.2) navTo(g, px, pz, ASSISTANT.walkSpeed, dt);
+      else {
+        faceTo(g, px, pz, dt, 6);
+        play(idleAnim(now));
+      }
+      return;
+    }
+
+    // ── lead/escort: walk ahead to the chosen wing, waiting if the visitor lags ──
+    if (st.guideTarget) {
+      st.setAssistantMode("lead");
+      if (leadFor.current !== st.guideTarget) {
+        leadFor.current = st.guideTarget;
+        st.setBubble(`Follow me to ${wingById[st.guideTarget].name} →`);
+        bubbleUntil.current = now + 4000;
+      }
+      const node = WING_TO_NODE[st.guideTarget];
+      const dst = ASSISTANT_NAV[node];
+      if (dist > 6) {
+        // visitor fell behind — hold position, face them and wait
+        faceTo(g, px, pz, dt, 5);
+        play(idleAnim(now));
+      } else if (navTo(g, dst.pos[0], dst.pos[1], ASSISTANT.walkSpeed, dt)) {
+        // arrived → present the gallery, then linger facing the art for a moment
+        const w = wingById[st.guideTarget];
+        st.setBubble(`Here we are — ${w.name}. ${w.subtitle}`);
+        bubbleUntil.current = now + 6500;
+        roamDest.current = node;
+        roamToPlayer.current = false;
+        pauseUntil.current = now + 6000;
+        leadFor.current = null;
+        st.setGuideTarget(null);
+      }
+      return;
+    }
+
     // ── brief follow after a conversation ──
     if (now < followUntil.current && dist < ASSISTANT.followDrop) {
       st.setAssistantMode("follow");
@@ -272,6 +380,25 @@ export default function Assistant() {
         play(idleAnim(now));
       }
       return;
+    }
+
+    // ── linger commentary: if the visitor dwells on a piece, she offers a
+    //    one-line insight about it (reuses the curated placard copy) ──
+    const near = st.nearby;
+    if (near !== lingerSlug.current) {
+      lingerSlug.current = near;
+      lingerStart.current = now;
+    }
+    if (
+      near &&
+      !st.bubble &&
+      now - lingerStart.current > 2500 &&
+      now > commentCooldown.current &&
+      INSIGHTS[near]
+    ) {
+      st.setBubble(INSIGHTS[near]);
+      bubbleUntil.current = now + 5500;
+      commentCooldown.current = now + 16000;
     }
 
     // ── attention: she notices a gaze or a close approach ──
@@ -287,26 +414,44 @@ export default function Assistant() {
       return;
     }
 
-    // ── roam: linger at art, sometimes near the visitor ──
+    // ── roam: linger at an artwork, or wander over to wherever the visitor is ──
     st.setAssistantMode("roam");
-    if (now < pauseUntil.current && roamDest.current >= 0) {
-      const lk = ASSISTANT_NAV[roamDest.current].look;
-      faceTo(g, lk[0], lk[1], dt, 2);
+    if (now < pauseUntil.current && (roamToPlayer.current || roamDest.current >= 0)) {
+      if (roamToPlayer.current) faceTo(g, px, pz, dt, 2);
+      else {
+        const lk = ASSISTANT_NAV[roamDest.current].look;
+        faceTo(g, lk[0], lk[1], dt, 2);
+      }
       play(now < danceUntil.current ? "Dance" : idleAnim(now));
       return;
     }
     if (pauseUntil.current !== 0) {
       pauseUntil.current = 0;
       roamDest.current = -1; // re-pick after a pause
+      roamToPlayer.current = false;
     }
-    if (roamDest.current < 0) {
-      roamDest.current =
-        Math.random() < 0.35
-          ? nearestNode(px, pz) // hang out near the visitor
-          : ART_NODES[Math.floor(Math.random() * ART_NODES.length)];
+    // Choose a destination: ~45% drift toward the visitor (wherever they are in
+    // the museum), otherwise go linger at one of the actual artwork bays — never
+    // an arbitrary hallway junction.
+    if (roamDest.current < 0 && !roamToPlayer.current) {
+      if (Math.random() < 0.45) roamToPlayer.current = true;
+      else roamDest.current = ART_NODES[Math.floor(Math.random() * ART_NODES.length)];
     }
-    const dst = ASSISTANT_NAV[roamDest.current];
-    if (navTo(g, dst.pos[0], dst.pos[1], ASSISTANT.walkSpeed, dt)) {
+    let arrived: boolean;
+    if (roamToPlayer.current) {
+      // stand a couple of metres off the visitor (the attention branch takes
+      // over once she's within engage range, so she ends up beside them).
+      const dx = g.position.x - px;
+      const dz = g.position.z - pz;
+      const dl = Math.hypot(dx, dz) || 1;
+      const tx = px + (dx / dl) * 2.4;
+      const tz = pz + (dz / dl) * 2.4;
+      arrived = navTo(g, tx, tz, ASSISTANT.walkSpeed, dt);
+    } else {
+      const dst = ASSISTANT_NAV[roamDest.current];
+      arrived = navTo(g, dst.pos[0], dst.pos[1], ASSISTANT.walkSpeed, dt);
+    }
+    if (arrived) {
       pauseUntil.current = now + 4000 + Math.random() * 3500;
       if (Math.random() < 0.12)
         danceUntil.current = now + (actions["Dance"]?.getClip().duration ?? 3) * 1000;
@@ -315,21 +460,21 @@ export default function Assistant() {
 
   return (
     <group ref={group} dispose={null}>
-      <group scale={norm.s} position={norm.offset.toArray()}>
+      <group ref={inner} scale={norm.s} position={norm.offset.toArray()}>
         <primitive object={scene} />
       </group>
-      <Bubble />
+      <Bubble y={norm.topY + 0.32} />
     </group>
   );
 }
 
 // Thought bubble, anchored ABOVE her head (grows upward so it never covers her).
-function Bubble() {
+function Bubble({ y }: { y: number }) {
   const bubble = useMuseum((s) => s.bubble);
   const chatOpen = useMuseum((s) => s.chatOpen);
   if (!bubble || chatOpen) return null; // during chat, the panel shows her words
   return (
-    <Html position={[0, 2.35, 0]} style={{ pointerEvents: "none" }} zIndexRange={[20, 0]}>
+    <Html position={[0, y, 0]} style={{ pointerEvents: "none" }} zIndexRange={[20, 0]}>
       <div
         style={{
           transform: "translate(-50%, -100%)",

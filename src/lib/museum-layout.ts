@@ -336,6 +336,16 @@ export const ASSISTANT_NAV: NavNode[] = [
   { pos: [0, -56], look: [0, -66], to: [8] }, // 9 information terminus
 ];
 
+// Which nav node fronts each wing — used by the guide to escort a visitor to a
+// gallery they pick from the entry menu (see Assistant "lead" mode).
+export const WING_TO_NODE: Record<WingId, number> = {
+  identity: 2,
+  print: 3,
+  social: 6,
+  marketing: 7,
+  infographics: 9,
+};
+
 // Procedural marble columns flanking the entrance title wall (rendered in
 // Architecture, not from a GLB — the GLB column read as a cheap baluster).
 export const COLUMNS: { pos: [number, number, number]; height: number }[] = [
@@ -387,31 +397,38 @@ const PROP_SEGS: Seg[] = [
 const COLLIDERS: Seg[] = [...WALLS, ...BENCH_SEGS, ...PROP_SEGS];
 
 // ── collision: keep a radius-r disc clear of every wall + bench segment ──
+// A few relaxation passes so that being pushed off one wall (e.g. at an inside
+// corner or a doorway jamb) doesn't leave the disc embedded in the next one.
 export function collide(px: number, pz: number, radius = 0.45): [number, number] {
   let x = px;
   let z = pz;
-  for (const w of COLLIDERS) {
-    const ax = w.x1;
-    const az = w.z1;
-    const bx = w.x2;
-    const bz = w.z2;
-    const dx = bx - ax;
-    const dz = bz - az;
-    const len2 = dx * dx + dz * dz || 1;
-    let t = ((x - ax) * dx + (z - az) * dz) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = ax + dx * t;
-    const cz = az + dz * t;
-    const ox = x - cx;
-    const oz = z - cz;
-    const dist = Math.hypot(ox, oz);
-    if (dist < radius) {
-      const push = (radius - dist) || radius;
-      const nx = dist > 1e-4 ? ox / dist : 1;
-      const nz = dist > 1e-4 ? oz / dist : 0;
-      x += nx * push;
-      z += nz * push;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (const w of COLLIDERS) {
+      const ax = w.x1;
+      const az = w.z1;
+      const bx = w.x2;
+      const bz = w.z2;
+      const dx = bx - ax;
+      const dz = bz - az;
+      const len2 = dx * dx + dz * dz || 1;
+      let t = ((x - ax) * dx + (z - az) * dz) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const cx = ax + dx * t;
+      const cz = az + dz * t;
+      const ox = x - cx;
+      const oz = z - cz;
+      const dist = Math.hypot(ox, oz);
+      if (dist < radius) {
+        const push = (radius - dist) || radius;
+        const nx = dist > 1e-4 ? ox / dist : 1;
+        const nz = dist > 1e-4 ? oz / dist : 0;
+        x += nx * push;
+        z += nz * push;
+        moved = true;
+      }
     }
+    if (!moved) break;
   }
   return [x, z];
 }

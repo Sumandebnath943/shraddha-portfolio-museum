@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import * as THREE from "three";
 import { SPAWN, EYE_H } from "@/lib/museum-layout";
+import type { WingId } from "@/data/types";
 
 // Non-reactive, mutated every frame by the player controller and read by
 // exhibits/HUD in their own frame loops (avoids React re-renders per frame).
@@ -32,6 +33,11 @@ interface MuseumState {
   bubble: string; // short line shown above her head (greeting / current reply)
   assistantMode: string; // current behaviour state (debug / UI)
   messages: ChatMsg[]; // chat transcript
+  // guided tour
+  guideMenuOpen: boolean; // the "where would you like to go?" wing chips are up
+  guideTarget: WingId | null; // wing she is currently escorting the visitor to
+  voiceOn: boolean; // speak her replies aloud (Web Speech API)
+  listening: boolean; // mic is capturing the visitor's spoken question
   setSelected: (s: string | null) => void;
   setNearby: (s: string | null) => void;
   setEntered: (b: boolean) => void;
@@ -45,6 +51,10 @@ interface MuseumState {
   setSpeaking: (b: boolean) => void;
   setBubble: (s: string) => void;
   setAssistantMode: (s: string) => void;
+  setGuideMenuOpen: (b: boolean) => void;
+  setGuideTarget: (w: WingId | null) => void;
+  setVoiceOn: (b: boolean) => void;
+  setListening: (b: boolean) => void;
   addMessage: (m: ChatMsg) => void;
   appendToLast: (chunk: string) => void; // stream tokens into the last message
   clearMessages: () => void;
@@ -65,6 +75,10 @@ export const useMuseum = create<MuseumState>((set) => ({
   bubble: "",
   assistantMode: "spawn",
   messages: [],
+  guideMenuOpen: false,
+  guideTarget: null,
+  voiceOn: true,
+  listening: false,
   setSelected: (selected) => set({ selected }),
   setNearby: (nearby) => set((s) => (s.nearby === nearby ? s : { nearby })),
   setEntered: (entered) => set({ entered }),
@@ -79,6 +93,10 @@ export const useMuseum = create<MuseumState>((set) => ({
   setBubble: (bubble) => set((s) => (s.bubble === bubble ? s : { bubble })),
   setAssistantMode: (assistantMode) =>
     set((s) => (s.assistantMode === assistantMode ? s : { assistantMode })),
+  setGuideMenuOpen: (guideMenuOpen) => set({ guideMenuOpen }),
+  setGuideTarget: (guideTarget) => set({ guideTarget }),
+  setVoiceOn: (voiceOn) => set({ voiceOn }),
+  setListening: (listening) => set((s) => (s.listening === listening ? s : { listening })),
   addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
   appendToLast: (chunk) =>
     set((s) => {
