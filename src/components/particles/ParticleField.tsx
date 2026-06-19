@@ -46,22 +46,23 @@ const ID: Record<string, number> = {
 // the "design coming to life" sequence, with her face as the recurring heartbeat
 const PLAYLIST = ["lightbulb", "bezier", "swatches", "face", "bauhaus", "ampersand", "face", "frame", "butterfly", "face"];
 
-// fraction of the MORPH pool each shape actually uses — the rest become its halo.
-// The face is the hero (sparse line-portrait look); line shapes need far fewer
-// points than filled silhouettes, so their density reads correctly instead of
-// blowing out. Leftover = soft living halo around the form.
+// fraction of the TOTAL pool each shape actually uses (so counts stay stable
+// regardless of the sky split). The face is the hero (sparse line-portrait look);
+// line shapes need far fewer points than filled silhouettes. Leftover beyond the
+// shape becomes a small halo + faint deep dust (see fillHalo) — NOT a wide wash.
 const SHAPE_FRAC: Record<string, number> = {
-  face: 0.56,
-  lightbulb: 0.34,
-  bezier: 0.17,
-  swatches: 0.22,
-  bauhaus: 0.32,
-  ampersand: 0.26,
-  frame: 0.2,
-  butterfly: 0.32,
+  face: 0.48,
+  lightbulb: 0.26,
+  bezier: 0.13,
+  swatches: 0.17,
+  bauhaus: 0.24,
+  ampersand: 0.19,
+  frame: 0.15,
+  butterfly: 0.24,
 };
 
-const SKY_FRAC = 0.3; // share of the pool that becomes the persistent starfield
+const HALO_FRAC = 0.12; // small dim aura hugging each shape (fraction of total)
+const SKY_FRAC = 0.16; // subtle persistent starfield (fraction of total)
 
 const TRANSITION = 2400;
 const HOLD_FACE = 6000;
@@ -83,62 +84,142 @@ const COLORS = {
 // ── morphing field shader (the organism / shapes / sun / portal) ────────────
 const VS = `
 attribute vec3 aPosA; attribute vec3 aPosB;
-attribute float aShadeA; attribute float aShadeB; attribute float aSize; attribute float aSeed;
+attribute float aShadeA; attribute float aShadeB; attribute float aAlphaA; attribute float aAlphaB;
+attribute float aSize; attribute float aSeed;
 uniform float uBlend; uniform float uTime; uniform float uDrift; uniform float uPx;
-uniform float uShape; uniform float uHold; uniform vec2 uCenter; uniform float uWarp;
+uniform float uShape; uniform float uHold; uniform vec2 uCenter; uniform float uWarp; uniform float uToB;
 uniform vec3 uDim; uniform vec3 uBright;
-varying vec3 vColor;
+varying vec3 vColor; varying float vAlpha; varying float vStar;
 void main(){
-  vec3 p = mix(aPosA, aPosB, uBlend);
+  // ── per-particle STAGGERED progress: the swarm reassembles in a flowing wave,
+  //    not a rigid uniform crossfade — so it reads as ONE living organism. ──
+  float raw = uToB > 0.5 ? uBlend : (1.0 - uBlend);     // 0..1 toward destination
+  float STG = 0.42;                                      // spread of the wave
+  float local = clamp((raw - aSeed * STG) / (1.0 - STG), 0.0, 1.0);
+  local = local * local * (3.0 - 2.0 * local);          // ease this particle's own arc
+  float pm = uToB > 0.5 ? local : (1.0 - local);
+  vec3 p = mix(aPosA, aPosB, pm);
+
+  // ── opacity: each particle stays faint while travelling and ignites only as IT
+  //    arrives, so the form lights up organically, particle by particle. ──
+  float src = uToB > 0.5 ? aAlphaA : aAlphaB;
+  float dst = uToB > 0.5 ? aAlphaB : aAlphaA;
+  float ramp = dst >= src ? smoothstep(0.8, 1.0, local)  // brighten only at the end
+                          : smoothstep(0.0, 0.2, local); // leaving → dim quickly
+  float al = mix(src, dst, ramp);
+
+  // role from the DESTINATION: 0 = shape, 1 = halo, 2 = background star
+  float role = dst > 0.7 ? 0.0 : (dst > 0.31 ? 1.0 : 2.0);
+  float isShape = role < 0.5 ? 1.0 : 0.0;
+  float driftScale = role < 0.5 ? 1.0 : (role < 1.5 ? 0.32 : 0.0); // halo less; stars none
+  vStar = role > 1.5 ? 1.0 : 0.0;
+
   float h = uHold;
-  if (h > 0.001) {
-    if (uShape > 1.5 && uShape < 2.5) {           // butterfly wing-flap
-      float dx = p.x - uCenter.x;
-      float ang = sin(uTime * 1.7) * 0.55 * h;
-      p.x = uCenter.x + dx * cos(ang);
+  float cx = uCenter.x; float cy = uCenter.y; float T = uTime;
+
+  // ── distinct per-shape motion — active shape particles only ──
+  if (h > 0.001 && isShape > 0.5) {
+    if (abs(uShape-2.0) < 0.5) {            // butterfly: soft flutter + gentle figure-8 drift
+      float dx = p.x - cx;
+      float ang = sin(T * 2.0) * 0.4 * h;
+      p.x = cx + dx * cos(ang);
       p.z += dx * sin(ang);
-    } else if ((uShape > 0.5 && uShape < 1.5) || (uShape > 6.5 && uShape < 7.5)) {  // face / ampersand breathe
-      p.xy = uCenter + (p.xy - uCenter) * (1.0 + 0.012 * sin(uTime * 0.6) * h);
+      p.y += sin(T * 2.0) * 0.45 * h;
+      p.x += sin(T * 0.6) * 0.5 * h;
+    } else if (abs(uShape-1.0) < 0.5) {     // face: slow, living sway (no breathing pulse)
+      p.x += sin(T * 0.32) * 0.28 * h;
+      p.y += sin(T * 0.24 + 1.3) * 0.2 * h;
+    } else if (abs(uShape-3.0) < 0.5) {     // lightbulb: fine electric hum / filament jitter
+      p.x += sin(T * 9.0 + aSeed * 31.0) * 0.11 * h;
+      p.y += cos(T * 8.0 + aSeed * 21.0) * 0.11 * h;
+    } else if (abs(uShape-4.0) < 0.5) {     // bezier: a wave ripples along the curve
+      p.y += sin(p.x * 0.26 - T * 2.0) * 0.7 * h;
+    } else if (abs(uShape-5.0) < 0.5) {     // swatches: gentle rocking shuffle
+      float a = sin(T * 0.9) * 0.07 * h;
+      float ddx = p.x - cx; float ddy = p.y - cy;
+      p.x = cx + ddx * cos(a) - ddy * sin(a);
+      p.y = cy + ddx * sin(a) + ddy * cos(a);
+    } else if (abs(uShape-6.0) < 0.5) {     // bauhaus: slow oscillating tilt
+      float a = sin(T * 0.5) * 0.12 * h;
+      float ddx = p.x - cx; float ddy = p.y - cy;
+      p.x = cx + ddx * cos(a) - ddy * sin(a);
+      p.y = cy + ddx * sin(a) + ddy * cos(a);
+    } else if (abs(uShape-7.0) < 0.5) {     // ampersand: calligraphic italic sway (shear)
+      p.x += (p.y - cy) * sin(T * 0.9) * 0.07 * h;
+    } else if (abs(uShape-8.0) < 0.5) {     // frame: slow rotational drift
+      float a = sin(T * 0.4) * 0.05 * h;
+      float ddx = p.x - cx; float ddy = p.y - cy;
+      p.x = cx + ddx * cos(a) - ddy * sin(a);
+      p.y = cy + ddx * sin(a) + ddy * cos(a);
     }
   }
-  if (uWarp > 0.001) {                            // vortex → portal into the museum
+
+  // ── the sun is alive: a gentle churn + slow breathing (around screen centre) ──
+  if (abs(uShape - 11.0) < 0.5) {
+    vec2 cc = vec2(0.0);
+    vec2 d = p.xy - cc;
+    float r = length(d);
+    float ang = atan(d.y, d.x);
+    ang += T * 0.12 + (1.0 / (r * 0.16 + 1.0)) * 0.22 * sin(T * 0.5); // gentle swirl
+    float pulse = 1.0 + 0.035 * sin(T * 0.8 + r * 0.15);              // slow breathing
+    r *= pulse;
+    p.xy = cc + vec2(cos(ang), sin(ang)) * r;
+    p.z += sin(T * 1.0 + aSeed * 15.0) * 0.35;                        // subtle depth churn
+  }
+
+  // ── coherent FLOW while travelling: a smooth, position-based field so neighbours
+  //    move TOGETHER (fluid, like smoke/a murmuration), enveloped to zero at each
+  //    particle's own start & end. This is what makes it feel like one organism. ──
+  float env = sin(3.14159265 * local);
+  vec3 flow = vec3(
+    sin(p.y * 0.13 + T * 0.5) + cos(p.z * 0.11 - T * 0.4),
+    sin(p.z * 0.12 - T * 0.45) + cos(p.x * 0.10 + T * 0.5),
+    sin(p.x * 0.11 + p.y * 0.09 + T * 0.35)
+  );
+  p += flow * env * 1.25;
+  // faint travellers also drift gently downward, like falling stars
+  float far = length(aPosB - aPosA);
+  p.y -= env * min(far, 24.0) * 0.10 * (1.0 - al);
+
+  if (uWarp > 0.001) {                       // elegant vortex collapsing into the portal
     vec2 d = p.xy - uCenter;
     float r = length(d);
-    float a = atan(d.y, d.x) + uWarp * (6.0 + 9.0 / (r * 0.08 + 1.0));
-    r *= (1.0 - uWarp * 0.9);
+    float a = atan(d.y, d.x) + uWarp * (7.0 + 10.0 / (r * 0.08 + 1.0)); // accelerating swirl
+    r *= (1.0 - uWarp * 0.97);                                          // collapse to a point
     p.xy = uCenter + vec2(cos(a), sin(a)) * r;
-    p.z += uWarp * (44.0 + 30.0 * sin(aSeed * 6.2831)); // rush toward camera (tunnel)
   }
-  vec3 drift = vec3(sin(p.y*0.18+uTime*0.5), cos(p.x*0.18+uTime*0.45), sin((p.x+p.y)*0.13+uTime*0.3)) * uDrift;
-  drift += vec3(sin(uTime*1.3+aSeed*6.2831), cos(uTime*1.1+aSeed*5.0), 0.0) * 0.12;
-  p += drift;
+
+  vec3 drift = vec3(sin(p.y*0.18+T*0.5), cos(p.x*0.18+T*0.45), sin((p.x+p.y)*0.13+T*0.3)) * uDrift;
+  drift += vec3(sin(T*1.3+aSeed*6.2831), cos(T*1.1+aSeed*5.0), 0.0) * 0.12;
+  p += drift * driftScale;
+
+  // per-star async twinkle — sharpened so it scintillates like the night sky
+  float tw = 0.5 + 0.5 * sin(T * (0.7 + aSeed * 1.6) + aSeed * 40.0);
+  tw = tw * tw;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z));
+  float ptw = vStar > 0.5 ? (0.7 + 0.5 * tw) : 1.0; // subtle size sparkle for stars
+  gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z)) * ptw;
+
   float sh = mix(aShadeA, aShadeB, uBlend);
-  float glint = 0.0;
-  if (h > 0.001) {
-    if (abs(uShape-3.0) < 0.5) {                         // lightbulb: warm glow pulse
-      glint = (0.25 + 0.3 * (0.5 + 0.5 * sin(uTime * 1.6))) * h;
-    } else if (abs(uShape-4.0) < 0.5 || abs(uShape-8.0) < 0.5) {  // bezier / frame: glint sweep
-      float coord = (abs(uShape-4.0) < 0.5) ? (p.x - uCenter.x) : (p.y - uCenter.y);
-      float band = sin(uTime * 1.0) * 16.0;
-      glint = smoothstep(4.0, 0.0, abs(coord - band)) * 0.5 * h;
-    }
-  }
-  vColor = mix(uDim, uBright, clamp(sh + glint, 0.0, 1.0));
+  // the collapsing core brightens into the portal (brightness only, no opacity wash)
+  vColor = mix(uDim, uBright, clamp(sh + uWarp * uWarp * 0.4, 0.0, 1.0));
+  // stars twinkle by dimming from their set opacity (peak stays at the set value)
+  float starFade = vStar > 0.5 ? (0.55 + 0.45 * tw) : 1.0;
+  vAlpha = al * starFade;
 }
 `;
 
 const FS = `
 precision mediump float;
 uniform float uOpacity;
-varying vec3 vColor;
+varying vec3 vColor; varying float vAlpha; varying float vStar;
 void main(){
   float d = length(gl_PointCoord - vec2(0.5));
   if (d > 0.5) discard;
-  float a = smoothstep(0.5, 0.42, d); // hard, crisp dot so edge structure survives
-  gl_FragColor = vec4(vColor, a * uOpacity);
+  // crisp dot for shape structure; soft round dot for background stars
+  float a = vStar > 0.5 ? smoothstep(0.5, 0.0, d) : smoothstep(0.5, 0.42, d);
+  gl_FragColor = vec4(vColor, a * uOpacity * vAlpha);
 }
 `;
 
@@ -159,14 +240,14 @@ void main(){
     p.xy = uCenter + vec2(cos(a), sin(a)) * r;
     p.z += uWarp * 30.0;
   }
-  p.x += sin(uTime * 0.2 + aSeed * 6.2831) * 0.6; // slow individual drift
-  p.y += cos(uTime * 0.17 + aSeed * 5.0) * 0.6;
+  // background stars twinkle in place — NO positional drift
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = 0.32 + 0.68 * pow(0.5 + 0.5 * sin(uTime * (1.1 + aSeed * 2.4) + aSeed * 30.0), 2.0);
+  float tw = 0.5 + 0.5 * sin(uTime * (0.7 + aSeed * 1.6) + aSeed * 40.0);
+  tw = tw * tw; // sharpen → scintillation
   vTw = tw;
-  gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z)) * (0.55 + 0.85 * tw);
-  vColor = mix(uDim, uBright, clamp(aShade * (0.6 + 0.5 * tw), 0.0, 1.0));
+  gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z)) * (0.55 + 0.5 * tw);
+  vColor = mix(uDim, uBright, clamp(aShade * (0.7 + 0.3 * tw), 0.0, 1.0));
 }
 `;
 
@@ -178,7 +259,8 @@ void main(){
   float d = length(gl_PointCoord - vec2(0.5));
   if (d > 0.5) discard;
   float a = smoothstep(0.5, 0.0, d); // soft round star
-  gl_FragColor = vec4(vColor, a * uOpacity * (0.45 + 0.7 * vTw));
+  // twinkle by dimming; peak stays at the same ~20% set opacity, not raised
+  gl_FragColor = vec4(vColor, a * uOpacity * (0.10 + 0.16 * vTw));
 }
 `;
 
@@ -204,7 +286,7 @@ export default function ParticleField({
   const SKY = useMemo(() => Math.round(count * SKY_FRAC), [count]);
   const MORPH = count - SKY;
 
-  const shapes = useRef<Record<string, { pos: Float32Array; shade: Float32Array }>>({});
+  const shapes = useRef<Record<string, { pos: Float32Array; shade: Float32Array; alpha: Float32Array }>>({});
   const skyTargets = useRef<{ seed: Float32Array; sun: Float32Array; star: Float32Array; shade: Float32Array } | null>(null);
   const built = useRef(false);
   const faceFlag = useRef(false);
@@ -243,6 +325,8 @@ export default function ParticleField({
     g.setAttribute("aPosB", new THREE.BufferAttribute(new Float32Array(MORPH * 3), 3));
     g.setAttribute("aShadeA", new THREE.BufferAttribute(new Float32Array(MORPH), 1));
     g.setAttribute("aShadeB", new THREE.BufferAttribute(new Float32Array(MORPH), 1));
+    g.setAttribute("aAlphaA", new THREE.BufferAttribute(new Float32Array(MORPH).fill(1), 1));
+    g.setAttribute("aAlphaB", new THREE.BufferAttribute(new Float32Array(MORPH).fill(1), 1));
     g.setAttribute("aSize", new THREE.BufferAttribute(sz, 1));
     g.setAttribute("aSeed", new THREE.BufferAttribute(sd, 1));
     return g;
@@ -254,7 +338,7 @@ export default function ParticleField({
     const sz = new Float32Array(SKY);
     const sd = new Float32Array(SKY);
     for (let i = 0; i < SKY; i++) {
-      sz[i] = 0.8 + Math.random() * 1.7;
+      sz[i] = 0.55 + Math.random() * 1.05;
       sd[i] = Math.random();
     }
     g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(SKY * 3), 3));
@@ -276,6 +360,7 @@ export default function ParticleField({
       uShape: { value: 0 },
       uHold: { value: 0 },
       uWarp: { value: 0 },
+      uToB: { value: 1 },
       uCenter: { value: new THREE.Vector2() },
       uDim: { value: new THREE.Color(COLORS.dark.dim) },
       uBright: { value: new THREE.Color(COLORS.dark.bright) },
@@ -317,20 +402,26 @@ export default function ParticleField({
     attr.needsUpdate = true;
   };
 
-  // build a morph shape: `frac` of the pool forms the shape, the rest is its halo.
+  // build a morph shape: `frac`·count forms the shape (full opacity), a small halo
+  // hugs it (dim), the rest become full-screen background stars (20%).
   const buildShape = (
     fill: (p: Float32Array, s: Float32Array, n: number, L: Layout) => void,
     frac: number,
     L: Layout,
     rx: number,
     ry: number,
+    homePos: Float32Array,
+    homeShade: Float32Array,
   ) => {
     const pos = new Float32Array(MORPH * 3);
     const sh = new Float32Array(MORPH);
-    const budget = Math.round(MORPH * frac);
+    const al = new Float32Array(MORPH);
+    const budget = Math.min(MORPH, Math.round(count * frac));
+    const halo = Math.round(count * HALO_FRAC);
     fill(pos, sh, budget, L);
-    fillHalo(pos, sh, budget, MORPH, L, rx, ry);
-    return { pos, shade: sh };
+    for (let i = 0; i < budget; i++) al[i] = 1; // active shape particles → full glow
+    fillHalo(pos, sh, al, budget, halo, MORPH, L, rx, ry, homePos, homeShade);
+    return { pos, shade: sh, alpha: al };
   };
 
   useEffect(() => {
@@ -344,38 +435,45 @@ export default function ParticleField({
     // (uCenter doubles as shape-breathe centre = face box; that's fine — the warp
     //  pulls toward the sun which we re-aim below by swapping center on warp.)
 
+    // each particle's PERMANENT background-star home (full-screen), shared by every
+    // shape so stars stay put across morphs (only role-changers travel).
+    const homePos = new Float32Array(MORPH * 3);
+    const homeShade = new Float32Array(MORPH);
+    genSky(homePos, homeShade, MORPH, L);
+
+    const ones = () => new Float32Array(MORPH).fill(1);
+    // formless states (seed/sun/scatter/explode) are all full glow — no halo/stars
     const full = (fn: (p: Float32Array, s: Float32Array, c: number, l: Layout) => void) => {
       const pos = new Float32Array(MORPH * 3);
       const sh = new Float32Array(MORPH);
       fn(pos, sh, MORPH, L);
-      return { pos, shade: sh };
+      return { pos, shade: sh, alpha: ones() };
     };
 
-    // formless states use the whole morph pool
     shapes.current.seed = (() => {
       const pos = new Float32Array(MORPH * 3);
       const sh = new Float32Array(MORPH);
       genSeed(pos, sh, MORPH);
-      return { pos, shade: sh };
+      return { pos, shade: sh, alpha: ones() };
     })();
     shapes.current.sun = (() => {
       const pos = new Float32Array(MORPH * 3);
       const sh = new Float32Array(MORPH);
       genSun(pos, sh, MORPH);
-      return { pos, shade: sh };
+      return { pos, shade: sh, alpha: ones() };
     })();
     shapes.current.scatter = full(genScatter);
     shapes.current.explode = full(genExplode);
 
     // vector shapes — square-ish halo box around the left face column
     const vr = L.fhw * 1.05;
-    shapes.current.butterfly = buildShape(genButterfly, SHAPE_FRAC.butterfly, L, vr, vr);
-    shapes.current.lightbulb = buildShape(genLightbulb, SHAPE_FRAC.lightbulb, L, vr, vr);
-    shapes.current.bezier = buildShape(genBezier, SHAPE_FRAC.bezier, L, vr, vr);
-    shapes.current.swatches = buildShape(genSwatches, SHAPE_FRAC.swatches, L, vr, vr);
-    shapes.current.bauhaus = buildShape(genBauhaus, SHAPE_FRAC.bauhaus, L, vr, vr);
-    shapes.current.ampersand = buildShape(genAmpersand, SHAPE_FRAC.ampersand, L, vr, vr);
-    shapes.current.frame = buildShape(genFrame, SHAPE_FRAC.frame, L, vr, vr);
+    shapes.current.butterfly = buildShape(genButterfly, SHAPE_FRAC.butterfly, L, vr, vr, homePos, homeShade);
+    shapes.current.lightbulb = buildShape(genLightbulb, SHAPE_FRAC.lightbulb, L, vr, vr, homePos, homeShade);
+    shapes.current.bezier = buildShape(genBezier, SHAPE_FRAC.bezier, L, vr, vr, homePos, homeShade);
+    shapes.current.swatches = buildShape(genSwatches, SHAPE_FRAC.swatches, L, vr, vr, homePos, homeShade);
+    shapes.current.bauhaus = buildShape(genBauhaus, SHAPE_FRAC.bauhaus, L, vr, vr, homePos, homeShade);
+    shapes.current.ampersand = buildShape(genAmpersand, SHAPE_FRAC.ampersand, L, vr, vr, homePos, homeShade);
+    shapes.current.frame = buildShape(genFrame, SHAPE_FRAC.frame, L, vr, vr, homePos, homeShade);
 
     // sky targets: born from the sun, dispersed to a wide starfield
     const skySeed = new Float32Array(SKY * 3);
@@ -395,19 +493,20 @@ export default function ParticleField({
     setM("aPosB", shapes.current.seed.pos);
     setM("aShadeA", shapes.current.seed.shade);
     setM("aShadeB", shapes.current.seed.shade);
+    setM("aAlphaA", shapes.current.seed.alpha);
+    setM("aAlphaB", shapes.current.seed.alpha);
 
     loadBakedFace().then((baked) => {
+      const halo = Math.round(count * HALO_FRAC);
+      const pos = new Float32Array(MORPH * 3);
+      const sh = new Float32Array(MORPH);
+      const al = new Float32Array(MORPH);
+      const budget = Math.min(MORPH, Math.round(count * SHAPE_FRAC.face));
       if (baked) {
-        const pos = new Float32Array(MORPH * 3);
-        const sh = new Float32Array(MORPH);
-        const budget = Math.round(MORPH * SHAPE_FRAC.face);
         fillFaceFromPool(baked.pool, baked.aspect, pos, sh, budget, L);
-        fillHalo(pos, sh, budget, MORPH, L, L.fhw * 0.82, L.fhw * baked.aspect * 0.82);
-        shapes.current.face = { pos, shade: sh };
+        for (let i = 0; i < budget; i++) al[i] = 1;
+        fillHalo(pos, sh, al, budget, halo, MORPH, L, L.fhw * 0.8, L.fhw * baked.aspect * 0.8, homePos, homeShade);
       } else {
-        const pos = new Float32Array(MORPH * 3);
-        const sh = new Float32Array(MORPH);
-        const budget = Math.round(MORPH * SHAPE_FRAC.face);
         for (let i = 0; i < budget; i++) {
           const a = Math.random() * Math.PI * 2;
           const r = Math.sqrt(Math.random());
@@ -415,10 +514,11 @@ export default function ParticleField({
           pos[i * 3 + 1] = L.fcy + Math.sin(a) * r * L.fhh * 0.8;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 3;
           sh[i] = 0.5 + Math.random() * 0.3;
+          al[i] = 1;
         }
-        fillHalo(pos, sh, budget, MORPH, L, L.fhw * 0.82, L.fhh * 0.82);
-        shapes.current.face = { pos, shade: sh };
+        fillHalo(pos, sh, al, budget, halo, MORPH, L, L.fhw * 0.8, L.fhh * 0.8, homePos, homeShade);
       }
+      shapes.current.face = { pos, shade: sh, alpha: al };
       const now = performance.now();
       state.current.ready = true;
       state.current.holdUntil = now + SEED_HOLD;
@@ -436,6 +536,8 @@ export default function ParticleField({
     const hidden: "A" | "B" = s.shown === "A" ? "B" : "A";
     setM("aPos" + hidden, shp.pos);
     setM("aShade" + hidden, shp.shade);
+    setM("aAlpha" + hidden, shp.alpha);
+    if (matRef.current) matRef.current.uniforms.uToB.value = hidden === "B" ? 1 : 0;
     s.anim = { on: true, t: 0, dur: durMs / 1000, from: s.blend, to: hidden === "B" ? 1 : 0, slot: hidden };
     s.cur = name;
     s.nextHold = holdMs;
@@ -467,7 +569,8 @@ export default function ParticleField({
     const loose = s.cur === "scatter" || s.cur === "explode" || s.cur === "seed" || s.cur === "sun" || s.anim.on;
     const holding = !s.anim.on && !loose;
     m.uniforms.uHold.value += ((holding ? 1 : 0) - m.uniforms.uHold.value) * Math.min(1, dt * 2.5);
-    m.uniforms.uDrift.value += ((loose ? 1.6 : 0.42) - m.uniforms.uDrift.value) * Math.min(1, dt * 2);
+    // calmer base drift once a shape is formed, so its own designed motion reads
+    m.uniforms.uDrift.value += ((loose ? 1.6 : 0.22) - m.uniforms.uDrift.value) * Math.min(1, dt * 2);
 
     // warp portal: pull toward SCREEN centre (the sun), so re-aim uCenter on warp.
     const warpTarget = cs.warping ? 1 : 0;

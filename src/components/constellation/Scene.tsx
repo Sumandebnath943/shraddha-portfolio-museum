@@ -20,7 +20,7 @@ function EnvController() {
     // warp = everything but the particles vanishes (chart fades to black so the
     // sun/portal owns the screen); Play blooms the sky to full; otherwise the
     // chart stays dim under the particle sun.
-    const target = st.warping ? 0 : st.playing ? 1 : st.faceFormed ? 0.2 : 0;
+    const target = st.warping ? 0 : st.playing ? 1 : st.faceFormed ? 0.5 : 0;
     const rate = st.warping ? 3.5 : 1.5;
     env.bgLight += (target - env.bgLight) * Math.min(1, delta * rate);
   });
@@ -35,7 +35,7 @@ export default function Scene() {
   const count = useMemo(() => {
     if (typeof window === "undefined") return 190000;
     const coarse = window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 760;
-    return coarse ? 80000 : 190000;
+    return coarse ? 60000 : 150000;
   }, []);
 
   return (
@@ -52,7 +52,7 @@ export default function Scene() {
       <ParticleField count={count} skin={skin} reduced={reduced} />
       {skin === "dark" && (
         <EffectComposer>
-          <Bloom intensity={0.22} luminanceThreshold={0.55} luminanceSmoothing={0.7} mipmapBlur />
+          <Bloom intensity={0.34} luminanceThreshold={0.58} luminanceSmoothing={0.68} mipmapBlur />
           <Vignette eskil={false} offset={0.32} darkness={0.62} />
         </EffectComposer>
       )}

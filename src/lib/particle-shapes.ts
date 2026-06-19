@@ -96,36 +96,58 @@ export function genSun(pos: Float32Array, shade: Float32Array, count: number, R 
 
 // A persistent twinkling starfield spread across the whole sky, parked behind the
 // subject. Seeded once from the sun, then it stays put and only twinkles — these
-// particles never morph into a shape again.
+// particles never morph into a shape again. Kept dim/sparse so it reads as a
+// subtle backdrop, not a competing foreground.
 export function genSky(pos: Float32Array, shade: Float32Array, count: number, L: Layout) {
   for (let i = 0; i < count; i++) {
-    pos[i * 3] = rand(-L.ex * 1.35, L.ex * 1.35);
-    pos[i * 3 + 1] = rand(-L.ey * 1.3, L.ey * 1.3);
-    pos[i * 3 + 2] = rand(-34, -6);
-    shade[i] = rand(0.25, 0.95);
+    // spread well beyond the frame on every side so there is no empty margin
+    pos[i * 3] = rand(-L.ex * 2.2, L.ex * 2.2);
+    pos[i * 3 + 1] = rand(-L.ey * 2.2, L.ey * 2.2);
+    pos[i * 3 + 2] = rand(-46, -12);
+    shade[i] = rand(0.3, 0.8); // gold colour; the 20% look is set by opacity, not colour
   }
 }
 
-// The morph particles a shape doesn't need become a soft living halo framing it —
-// a dim, slowly drifting aura. Ring-biased (radius starts just outside the shape)
-// so it surrounds the form instead of filling and blowing it out.
+// The morph particles a shape doesn't need are split two ways, and each keeps its
+// gold glow — only the OPACITY changes (per the spec):
+//   • a ring-biased HALO hugging the form (glow kept, opacity dialled down), and
+//   • the remainder spread across the full sky as background twinkling STARS
+//     (20% opacity, handled by the shader; here we just place + tag them).
+// `alpha` holds the per-particle opacity multiplier: 1 = shape, ~0.4 = halo,
+// ~0.22 = background star.
 export function fillHalo(
   pos: Float32Array,
   shade: Float32Array,
-  from: number,
+  alpha: Float32Array,
+  budget: number,
+  haloCount: number,
   to: number,
   L: Layout,
   rx: number,
   ry: number,
+  homePos: Float32Array,
+  homeShade: Float32Array,
 ) {
-  for (let i = from; i < to; i++) {
+  const haloEnd = Math.min(to, budget + haloCount);
+  for (let i = budget; i < haloEnd; i++) {
     const a = rand(0, Math.PI * 2);
     const g = Math.abs((Math.random() + Math.random() + Math.random() - 1.5) / 1.5);
-    const rr = 0.95 + g * 1.55;
+    const rr = 0.9 + g * 0.95; // tight: hugs the shape instead of spraying wide
     pos[i * 3] = L.fcx + Math.cos(a) * rx * rr;
     pos[i * 3 + 1] = L.fcy + Math.sin(a) * ry * rr;
-    pos[i * 3 + 2] = rand(-9, 9);
-    shade[i] = rand(0.05, 0.2); // faint → glows softly under additive, never crowds
+    pos[i * 3 + 2] = rand(-6, 6);
+    shade[i] = rand(0.3, 0.6); // keeps a gold glow; opacity (below) keeps it soft
+    alpha[i] = 0.4;
+  }
+  // background stars use each particle's PERMANENT home position, so a star that
+  // stays a star between two shapes never moves — only particles that change role
+  // (background→shape or shape→background) travel during a morph.
+  for (let i = haloEnd; i < to; i++) {
+    pos[i * 3] = homePos[i * 3];
+    pos[i * 3 + 1] = homePos[i * 3 + 1];
+    pos[i * 3 + 2] = homePos[i * 3 + 2];
+    shade[i] = homeShade[i];
+    alpha[i] = 0.22; // background twinkling star — 20% opacity
   }
 }
 

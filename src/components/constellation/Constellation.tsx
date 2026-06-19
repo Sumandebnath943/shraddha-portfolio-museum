@@ -74,7 +74,7 @@ export default function Constellation() {
     const st = useConstellation.getState();
     if (st.soundOn) warpSweep();
     setWarping(true);
-    // gather → sun swells → collapses into the portal → fly through → load
+    // gather to sun → swirl into portal → fly through → load
     window.setTimeout(() => router.push("/museum"), 1950);
   };
 
