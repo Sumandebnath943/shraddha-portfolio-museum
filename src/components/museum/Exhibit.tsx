@@ -278,7 +278,7 @@ export function SpotlightPool({ placements }: { placements: ExhibitPlacement[] }
       light.position.set(fx.fx, fx.fy, fx.fz);
       tgt.position.set(fx.tx, ART_CENTER_Y, fx.tz);
       tgt.updateMatrixWorld();
-      const want = dist > SPOT_RANGE ? 0 : 30 * THREE.MathUtils.clamp(1 - (dist - 3) / 14, 0.55, 1);
+      const want = dist > SPOT_RANGE ? 0 : 36 * THREE.MathUtils.clamp(1 - (dist - 3) / 14, 0.55, 1);
       light.intensity = THREE.MathUtils.lerp(light.intensity, want, 0.12);
     }
   });

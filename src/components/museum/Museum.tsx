@@ -44,18 +44,28 @@ function SceneReady({ onReady }: { onReady: () => void }) {
 
 function Scene({ onReady }: { onReady: () => void }) {
   const placements = useMemo(() => getPlacements(), []);
+  // hero spotlight on her name on the entrance title wall (a warm welcome accent)
+  const heroTarget = useMemo(() => {
+    const o = new THREE.Object3D();
+    o.position.set(0, 3.0, 23.5);
+    return o;
+  }, []);
+  const heroRef = useRef<THREE.SpotLight>(null);
+  useEffect(() => {
+    if (heroRef.current) heroRef.current.target = heroTarget;
+  }, [heroTarget]);
   return (
     <>
-      <color attach="background" args={["#0e0d10"]} />
-      <fogExp2 attach="fog" args={["#15120e", 0.012]} />
+      <color attach="background" args={["#1b1712"]} />
+      <fogExp2 attach="fog" args={["#2b2419", 0.009]} />
 
-      {/* low, moody ambient — dim but readable; spotlights add the bright pools */}
-      <ambientLight intensity={0.52} color="#fff1da" />
-      <hemisphereLight intensity={0.5} color="#fff6ea" groundColor="#6b6358" />
+      {/* warm, welcoming fill — bright & happy; spotlights still add the focal pools */}
+      <ambientLight intensity={0.9} color="#fff3e2" />
+      <hemisphereLight intensity={0.8} color="#fff6ea" groundColor="#8a8175" />
       {/* dim key for soft grounding shadows (baked once) */}
       <directionalLight
         position={[8, 15, 10]}
-        intensity={0.55}
+        intensity={0.7}
         color="#fff1d8"
         castShadow
         shadow-mapSize-width={2048}
@@ -83,6 +93,20 @@ function Scene({ onReady }: { onReady: () => void }) {
           color="#ffd9a0"
         />
       ))}
+
+      {/* hero light: a warm spotlight washing her name on the entrance title wall */}
+      <primitive object={heroTarget} />
+      <spotLight
+        ref={heroRef}
+        position={[0, 4.7, 21.0]}
+        angle={0.6}
+        penumbra={0.85}
+        distance={11}
+        decay={2}
+        intensity={46}
+        color="#ffeccb"
+        castShadow={false}
+      />
 
       <Architecture />
       <Decor />
@@ -274,7 +298,7 @@ export default function Museum() {
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.02,
+          toneMappingExposure: 1.12,
           powerPreference: "high-performance",
         }}
       >
@@ -288,7 +312,7 @@ export default function Museum() {
         />
         <EffectComposer multisampling={0}>
           <Bloom intensity={0.28} luminanceThreshold={0.72} luminanceSmoothing={0.22} mipmapBlur />
-          <Vignette eskil={false} offset={0.3} darkness={0.34} />
+          <Vignette eskil={false} offset={0.3} darkness={0.18} />
           <SMAA />
         </EffectComposer>
         <AdaptiveDpr pixelated />
