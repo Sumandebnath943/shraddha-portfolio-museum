@@ -94,6 +94,22 @@ export function genSun(pos: Float32Array, shade: Float32Array, count: number, R 
   }
 }
 
+// The museum-entry "alien living orb": a 3D sphere of particles at screen centre
+// (shell-biased so it has a defined glowing surface). Its surface writhe, glow and
+// burst are driven in the shader (uOrb/uBurst).
+export function genOrb(pos: Float32Array, shade: Float32Array, count: number, R = 11) {
+  for (let i = 0; i < count; i++) {
+    const u = Math.random() * 2 - 1; // cos(theta), uniform over the sphere
+    const phi = rand(0, Math.PI * 2);
+    const s = Math.sqrt(Math.max(0, 1 - u * u));
+    const rr = R * (0.72 + 0.28 * Math.cbrt(Math.random())); // bias toward the shell
+    pos[i * 3] = s * Math.cos(phi) * rr;
+    pos[i * 3 + 1] = u * rr;
+    pos[i * 3 + 2] = s * Math.sin(phi) * rr;
+    shade[i] = 0.6 + 0.4 * Math.random(); // bright gold glow
+  }
+}
+
 // A persistent twinkling starfield spread across the whole sky, parked behind the
 // subject. Seeded once from the sun, then it stays put and only twinkles — these
 // particles never morph into a shape again. Kept dim/sparse so it reads as a

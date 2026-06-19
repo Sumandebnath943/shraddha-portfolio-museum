@@ -108,6 +108,21 @@ export default function Museum() {
   );
   const entered = useMuseum((s) => s.entered);
   const setEntered = useMuseum((s) => s.setEntered);
+  const freeLook = useMuseum((s) => s.freeLook);
+  const setFreeLook = useMuseum((s) => s.setFreeLook);
+  // Pointer Lock is unavailable in some contexts (embedded preview panes, certain
+  // permissions policies). Detect it up front; if blocked we enter in a no-lock
+  // "free look" mode (steer with the cursor) so the museum is always reachable.
+  const [pointerLockOK] = useState(() => {
+    if (typeof document === "undefined") return true;
+    try {
+      const fp = (document as Document & { featurePolicy?: { allowsFeature(f: string): boolean } }).featurePolicy;
+      if (fp && typeof fp.allowsFeature === "function") return fp.allowsFeature("pointer-lock");
+    } catch {
+      /* ignore */
+    }
+    return typeof document.body.requestPointerLock === "function";
+  });
   const nearby = useMuseum((s) => s.nearby);
   const selected = useMuseum((s) => s.selected);
   const setSelected = useMuseum((s) => s.setSelected);
@@ -122,10 +137,19 @@ export default function Museum() {
   const [ready, setReady] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
   const [progress, setProgress] = useState(0);
+  // white "bridge" from the landing's burst-to-white → fades out on first mount so
+  // the (light) cover appears to fade in cinematically on the white screen.
+  const [bridge, setBridge] = useState(true);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setBridge(false));
+    return () => cancelAnimationFrame(id);
+  }, []);
   const onSceneReady = useCallback(() => setSceneReady(true), []);
   // the museum is only truly enterable once BOTH the assets are fetched (the
   // progress bar) AND the 3D scene has mounted + precompiled its shaders.
   const fullyReady = ready && sceneReady;
+  // "in the museum" = pointer locked OR free-look fallback engaged
+  const active = locked || freeLook;
 
   // Preload every exhibit image up front so the walk is hitch-free (no
   // textures streaming in while you move). Warms THREE's cache; the in-scene
@@ -161,18 +185,18 @@ export default function Museum() {
     };
   }, []);
 
-  // click while locked + aimed at an exhibit → open its placard
+  // click while active + aimed at an exhibit → open its placard
   useEffect(() => {
     const onDown = () => {
       const st = useMuseum.getState();
-      if (locked && st.nearby && !st.selected && !st.nearKiosk) {
+      if ((locked || st.freeLook) && st.nearby && !st.selected && !st.nearKiosk) {
         setSelected(st.nearby);
-        controls.current?.unlock();
+        if (pointerLockOK) controls.current?.unlock();
       }
     };
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
-  }, [locked, setSelected]);
+  }, [locked, setSelected, pointerLockOK]);
 
   // press E while standing at the kiosk → open the download panel
   useEffect(() => {
@@ -189,7 +213,7 @@ export default function Museum() {
           st.setSpeaking(false);
           st.setListening(false);
           st.setBubble("");
-          controls.current?.lock();
+          if (pointerLockOK) controls.current?.lock();
         }
         return;
       }
@@ -207,35 +231,38 @@ export default function Museum() {
         return;
       }
       if (e.code !== "KeyE") return;
-      if (locked && st.nearKiosk && !st.kioskOpen && !st.selected) {
+      if ((locked || st.freeLook) && st.nearKiosk && !st.kioskOpen && !st.selected) {
         setKioskOpen(true);
-        controls.current?.unlock();
+        if (pointerLockOK) controls.current?.unlock();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [locked, setKioskOpen, setChatOpen]);
+  }, [locked, setKioskOpen, setChatOpen, pointerLockOK]);
 
   // opening the chat releases the pointer (so the visitor can type); closing
-  // it re-locks and resumes the walk.
+  // it re-locks and resumes the walk. (No-op when pointer lock is unavailable;
+  // free-look pauses via the chatOpen "frozen" check in Player.)
   useEffect(() => {
+    if (!pointerLockOK) return;
     if (chatOpen) controls.current?.unlock();
     else if (entered) controls.current?.lock();
-  }, [chatOpen, entered]);
+  }, [chatOpen, entered, pointerLockOK]);
 
   const closeKiosk = () => {
     setKioskOpen(false);
-    controls.current?.lock();
+    if (pointerLockOK) controls.current?.lock();
   };
 
   const enter = () => {
     if (!fullyReady && !entered) return; // wait until everything is fully loaded
     setEntered(true);
-    controls.current?.lock();
+    if (pointerLockOK) controls.current?.lock();
+    else setFreeLook(true); // no pointer lock here → enter in cursor-steer mode
   };
   const closePlacard = () => {
     setSelected(null);
-    controls.current?.lock();
+    if (pointerLockOK) controls.current?.lock();
   };
 
   return (
@@ -268,7 +295,7 @@ export default function Museum() {
       </Canvas>
 
       {/* crosshair */}
-      {locked && (
+      {active && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <div
             className={`h-1.5 w-1.5 rounded-full transition-all ${
@@ -304,7 +331,7 @@ export default function Museum() {
       </div>
 
       {/* bottom hint — context aware */}
-      {locked && (
+      {active && (
         <p
           className="eyebrow pointer-events-none absolute inset-x-0 bottom-6 z-10 text-center text-[var(--ink-dim)]"
           style={{ textShadow: "0 1px 12px rgba(0,0,0,0.95)" }}
@@ -315,6 +342,8 @@ export default function Museum() {
             ) : (
               <>Seated &nbsp;·&nbsp; Hold still and the view will pan &nbsp;·&nbsp; E or W A S D · Stand</>
             )
+          ) : freeLook ? (
+            <>W A S D · Move &nbsp;·&nbsp; Move cursor to the edges · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; C · Ask</>
           ) : (
             <>W A S D · Move &nbsp;·&nbsp; Mouse · Look &nbsp;·&nbsp; Click · View &nbsp;·&nbsp; E · Sit / Kiosk &nbsp;·&nbsp; C · Ask &nbsp;·&nbsp; V · Speak &nbsp;·&nbsp; Esc · Release</>
           )}
@@ -339,44 +368,67 @@ export default function Museum() {
         </div>
       )}
 
-      {/* enter / resume gate */}
-      {!isTouch && !selected && !locked && !kioskOpen && !chatOpen && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-6 bg-[var(--bg)]/82 text-center backdrop-blur-sm">
-          <p className="eyebrow">{entered ? "Paused" : "Now Open"}</p>
-          <h1 className="signage text-3xl text-[var(--ink)] sm:text-4xl">Shraddha Sonel</h1>
-          <p className="display max-w-md px-6 text-xl italic text-[var(--ink-dim)]">
-            {entered
-              ? "Click to resume your walk through the galleries."
-              : "A walkable museum of brand identity, print, social, marketing & information design."}
-          </p>
-          {entered || fullyReady ? (
-            <button
-              id="lock-trigger"
-              onClick={enter}
-              className="rounded-full bg-[var(--gold)] px-8 py-3.5 text-sm tracking-[0.18em] text-[var(--bg)] uppercase transition-transform hover:scale-[1.04]"
-            >
-              {entered ? "Resume" : "Enter the Museum"}
-            </button>
-          ) : (
-            <div className="flex flex-col items-center gap-3">
-              <div className="h-px w-56 overflow-hidden bg-[var(--hairline)]">
-                <div
-                  className="h-full bg-[var(--gold)] transition-[width] duration-300 ease-out"
-                  style={{ width: `${ready ? 100 : Math.round(progress * 100)}%` }}
-                />
+      {/* enter / resume gate — LIGHT, fully opaque cover page */}
+      {!isTouch && !selected && !active && !kioskOpen && !chatOpen && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center"
+          // starts at the SAME white as the landing burst, then warms to parchment —
+          // a smooth colour transformation, so there is no white→cream jump.
+          style={{ background: bridge ? "#ffffff" : "#ece2cd", transition: "background-color 2.1s ease-out" }}
+        >
+          <div
+            className="flex flex-col items-center justify-center gap-6 text-center"
+            // the cover materialises out of the white (blur → sharp), Venom-style
+            style={{
+              opacity: bridge ? 0 : 1,
+              transform: bridge ? "scale(0.985)" : "none",
+              filter: bridge ? "blur(9px)" : "blur(0px)",
+              transition:
+                "opacity 1.6s ease-out 0.6s, transform 1.6s ease-out 0.6s, filter 1.6s ease-out 0.6s",
+            }}
+          >
+            <p className="eyebrow" style={{ color: "#9a8a64" }}>{entered ? "Paused" : "Now Open"}</p>
+            <h1 className="signage text-3xl sm:text-4xl" style={{ color: "#2a2417" }}>
+              Shraddha Sonel
+            </h1>
+            <p className="display max-w-md px-6 text-xl italic" style={{ color: "#6e6044" }}>
+              {entered
+                ? "Click to resume your walk through the galleries."
+                : "A walkable museum of brand identity, print, social, marketing & information design."}
+            </p>
+            {entered || fullyReady ? (
+              <button
+                id="lock-trigger"
+                onClick={enter}
+                className="rounded-full px-8 py-3.5 text-sm tracking-[0.18em] uppercase transition-transform hover:scale-[1.04]"
+                style={{ background: "#9c7a2a", color: "#fdf6e3" }}
+              >
+                {entered ? "Resume" : "Enter the Museum"}
+              </button>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-px w-56 overflow-hidden" style={{ background: "#cabfa6" }}>
+                  <div
+                    className="h-full transition-[width] duration-300 ease-out"
+                    style={{ width: `${ready ? 100 : Math.round(progress * 100)}%`, background: "#9c7a2a" }}
+                  />
+                </div>
+                <p className="eyebrow" style={{ color: "#9a8a64" }}>
+                  {ready
+                    ? "Building the galleries · almost there"
+                    : `Preparing the galleries · ${Math.round(progress * 100)}%`}
+                </p>
               </div>
-              <p className="eyebrow">
-                {ready
-                  ? "Building the galleries · almost there"
-                  : `Preparing the galleries · ${Math.round(progress * 100)}%`}
+            )}
+            {(entered || fullyReady) && (
+              <p className="eyebrow opacity-70" style={{ color: "#9a8a64" }}>
+                Move with WASD · Look with the mouse
               </p>
-            </div>
-          )}
-          {(entered || fullyReady) && (
-            <p className="eyebrow opacity-70">Move with WASD · Look with the mouse</p>
-          )}
+            )}
+          </div>
         </div>
       )}
+
 
       {/* kiosk download panel */}
       {kioskOpen && (

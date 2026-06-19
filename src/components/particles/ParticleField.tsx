@@ -10,6 +10,7 @@ import {
   genExplode,
   genSeed,
   genSun,
+  genOrb,
   genSky,
   fillHalo,
   genButterfly,
@@ -26,6 +27,7 @@ import type { Layout } from "@/lib/particle-shapes";
 import type { SkinName } from "@/lib/constellation-layout";
 
 const D = 40;
+const ORIGIN2 = new THREE.Vector2(0, 0);
 
 // uShape ids used by the morph shader for per-shape hold animations.
 const ID: Record<string, number> = {
@@ -41,6 +43,7 @@ const ID: Record<string, number> = {
   explode: 9,
   seed: 10,
   sun: 11,
+  orb: 12,
 };
 
 // the "design coming to life" sequence, with her face as the recurring heartbeat
@@ -88,6 +91,7 @@ attribute float aShadeA; attribute float aShadeB; attribute float aAlphaA; attri
 attribute float aSize; attribute float aSeed;
 uniform float uBlend; uniform float uTime; uniform float uDrift; uniform float uPx;
 uniform float uShape; uniform float uHold; uniform vec2 uCenter; uniform float uWarp; uniform float uToB;
+uniform float uOrb; uniform float uGlow; uniform float uSolid; uniform float uBurst;
 uniform vec3 uDim; uniform vec3 uBright;
 varying vec3 vColor; varying float vAlpha; varying float vStar;
 void main(){
@@ -181,12 +185,27 @@ void main(){
   float far = length(aPosB - aPosA);
   p.y -= env * min(far, 24.0) * 0.10 * (1.0 - al);
 
-  if (uWarp > 0.001) {                       // elegant vortex collapsing into the portal
-    vec2 d = p.xy - uCenter;
-    float r = length(d);
-    float a = atan(d.y, d.x) + uWarp * (7.0 + 10.0 / (r * 0.08 + 1.0)); // accelerating swirl
-    r *= (1.0 - uWarp * 0.97);                                          // collapse to a point
-    p.xy = uCenter + vec2(cos(a), sin(a)) * r;
+  // ── museum entry: alien living orb → solid light → shatter to white ──
+  if (uOrb > 0.001) {
+    vec3 rel = p;                       // orb is gathered at the origin (screen centre)
+    float ca = cos(T * 0.4), sa = sin(T * 0.4);
+    rel.xz = mat2(ca, sa, -sa, ca) * rel.xz;     // slow rotation about the vertical axis
+    float rad = length(rel) + 1e-4;
+    vec3 dir = rel / rad;
+    // pronounced, multi-frequency alien writhe — several lobes drift over the surface
+    float w1 = sin(dir.x * 3.0 + T * 1.1) + sin(dir.y * 3.7 - T * 0.9) + sin(dir.z * 3.2 + T * 0.7);
+    float w2 = sin(dir.x * 6.0 - T * 0.5) * sin(dir.z * 5.0 + T * 0.6);   // turbulent detail
+    float calm = 1.0 - uSolid;                    // surface smooths into a solid sphere near the peak
+    float writhe = (w1 + w2 * 1.6) * 2.4 * calm;
+    float pulse = 1.0 + 0.08 * sin(T * 1.4) * calm;
+    p = mix(p, rel * pulse + dir * writhe, uOrb);
+  }
+  if (uBurst > 0.001) {                  // shatter into a million pieces, each its own way
+    vec3 dir = normalize(p + vec3(1e-4));
+    vec3 jit = vec3(sin(aSeed * 12.0), cos(aSeed * 23.0), sin(aSeed * 7.0 + 2.0));
+    vec3 rdir = normalize(dir + jit * 0.7);
+    // shards linger on-screen (big + white) so the blast itself floods to white
+    p += rdir * uBurst * uBurst * 95.0;
   }
 
   vec3 drift = vec3(sin(p.y*0.18+T*0.5), cos(p.x*0.18+T*0.45), sin((p.x+p.y)*0.13+T*0.3)) * uDrift;
@@ -199,11 +218,13 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   float ptw = vStar > 0.5 ? (0.7 + 0.5 * tw) : 1.0; // subtle size sparkle for stars
-  gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z)) * ptw;
+  // grow as the orb solidifies so particles merge into one solid source of light
+  gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z)) * ptw * (1.0 + uGlow * 1.7);
 
   float sh = mix(aShadeA, aShadeB, uBlend);
-  // the collapsing core brightens into the portal (brightness only, no opacity wash)
-  vColor = mix(uDim, uBright, clamp(sh + uWarp * uWarp * 0.4, 0.0, 1.0));
+  vec3 baseCol = mix(uDim, uBright, clamp(sh + uOrb * 0.25, 0.0, 1.0));
+  // gradual glow drives the orb to a solid white light, then full white on the burst
+  vColor = mix(baseCol, vec3(1.0), clamp(uGlow * 0.9 + uBurst, 0.0, 1.0));
   // stars twinkle by dimming from their set opacity (peak stays at the set value)
   float starFade = vStar > 0.5 ? (0.55 + 0.45 * tw) : 1.0;
   vAlpha = al * starFade;
@@ -232,13 +253,12 @@ uniform vec3 uDim; uniform vec3 uBright;
 varying vec3 vColor; varying float vTw;
 void main(){
   vec3 p = mix(aPosA, aPosB, uBlend);
-  if (uWarp > 0.001) {                            // get drawn into the portal too
+  if (uWarp > 0.001) {                            // rush to centre to join the orb, then fade
     vec2 d = p.xy - uCenter;
     float r = length(d);
-    float a = atan(d.y, d.x) + uWarp * 4.0;
-    r *= (1.0 - uWarp * 0.55);
+    float a = atan(d.y, d.x) + uWarp * 5.0;
+    r *= (1.0 - uWarp * 0.98);
     p.xy = uCenter + vec2(cos(a), sin(a)) * r;
-    p.z += uWarp * 30.0;
   }
   // background stars twinkle in place — NO positional drift
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -247,7 +267,7 @@ void main(){
   tw = tw * tw; // sharpen → scintillation
   vTw = tw;
   gl_PointSize = aSize * uPx * (30.0 / max(1.0, -mv.z)) * (0.55 + 0.5 * tw);
-  vColor = mix(uDim, uBright, clamp(aShade * (0.7 + 0.3 * tw), 0.0, 1.0));
+  vColor = mix(uDim, uBright, clamp(aShade * (0.7 + 0.3 * tw), 0.0, 1.0)) * (1.0 - uWarp); // fade into the burst
 }
 `;
 
@@ -301,6 +321,7 @@ export default function ParticleField({
     step: 0,
     introDone: false,
     pl: -1,
+    warpT: 0,
     anim: { on: false, t: 0, dur: 2.4, from: 0, to: 0, slot: "A" as "A" | "B" },
   });
   const sky = useRef({
@@ -360,6 +381,10 @@ export default function ParticleField({
       uShape: { value: 0 },
       uHold: { value: 0 },
       uWarp: { value: 0 },
+      uOrb: { value: 0 },
+      uGlow: { value: 0 },
+      uSolid: { value: 0 },
+      uBurst: { value: 0 },
       uToB: { value: 1 },
       uCenter: { value: new THREE.Vector2() },
       uDim: { value: new THREE.Color(COLORS.dark.dim) },
@@ -460,6 +485,12 @@ export default function ParticleField({
       const pos = new Float32Array(MORPH * 3);
       const sh = new Float32Array(MORPH);
       genSun(pos, sh, MORPH);
+      return { pos, shade: sh, alpha: ones() };
+    })();
+    shapes.current.orb = (() => {
+      const pos = new Float32Array(MORPH * 3);
+      const sh = new Float32Array(MORPH);
+      genOrb(pos, sh, MORPH);
       return { pos, shade: sh, alpha: ones() };
     })();
     shapes.current.scatter = full(genScatter);
@@ -572,13 +603,34 @@ export default function ParticleField({
     // calmer base drift once a shape is formed, so its own designed motion reads
     m.uniforms.uDrift.value += ((loose ? 1.6 : 0.22) - m.uniforms.uDrift.value) * Math.min(1, dt * 2);
 
-    // warp portal: pull toward SCREEN centre (the sun), so re-aim uCenter on warp.
-    const warpTarget = cs.warping ? 1 : 0;
-    m.uniforms.uWarp.value += (warpTarget - m.uniforms.uWarp.value) * Math.min(1, dt * 1.4);
-    if (ms) ms.uniforms.uWarp.value = m.uniforms.uWarp.value;
+    // ── museum entry sequence (runs even while the gather morph is animating) ──
+    //   0.0–2.0s  particles slowly gather into the orb
+    //   1.4–2.8s  it comes alive — an alien, writhing organism
+    //   2.8–4.7s  it glows, gradually, into a solid source of light
+    //   4.0–4.8s  the surface calms; it's now a solid, blinding orb
+    //   4.9–5.7s  it shatters into a million pieces; the screen blows to white
     if (cs.warping) {
-      m.uniforms.uCenter.value.lerp(new THREE.Vector2(0, 0), Math.min(1, dt * 3));
-      if (ms) ms.uniforms.uCenter.value.set(0, 0);
+      s.warpT += dt;
+      const wt = s.warpT;
+      const cl = (x: number) => Math.max(0, Math.min(1, x));
+      m.uniforms.uWarp.value += (1 - m.uniforms.uWarp.value) * Math.min(1, dt * 1.6);
+      m.uniforms.uCenter.value.lerp(ORIGIN2, Math.min(1, dt * 3));
+      m.uniforms.uOrb.value = cl((wt - 1.4) / 1.4);
+      m.uniforms.uGlow.value = cl((wt - 2.8) / 1.9);
+      m.uniforms.uSolid.value = cl((wt - 4.0) / 0.8);
+      m.uniforms.uBurst.value = cl((wt - 4.9) / 1.0); // shatter over a full second, in view
+      if (ms) {
+        ms.uniforms.uWarp.value = m.uniforms.uWarp.value;
+        ms.uniforms.uCenter.value.set(0, 0);
+      }
+    } else {
+      s.warpT = 0;
+      m.uniforms.uWarp.value += (0 - m.uniforms.uWarp.value) * Math.min(1, dt * 1.4);
+      m.uniforms.uOrb.value = 0;
+      m.uniforms.uGlow.value = 0;
+      m.uniforms.uSolid.value = 0;
+      m.uniforms.uBurst.value = 0;
+      if (ms) ms.uniforms.uWarp.value = m.uniforms.uWarp.value;
     }
 
     // ── sky timeline (independent of the morph field) ──
@@ -624,9 +676,9 @@ export default function ParticleField({
       return;
     }
 
-    // museum warp: gather the morph field into the sun, then it swirls into the portal
+    // museum entry: slowly gather the whole field into the living orb (then it bursts)
     if (cs.warping) {
-      if (s.cur !== "sun") morphTo("sun", 700, 1e9);
+      if (s.cur !== "orb") morphTo("orb", 2000, 1e9);
       return;
     }
 

@@ -21,6 +21,7 @@ interface MuseumState {
   selected: string | null; // exhibit slug whose placard is open
   nearby: string | null; // exhibit currently under the crosshair / in range
   entered: boolean; // has the visitor clicked "Enter"
+  freeLook: boolean; // pointer-lock unavailable → look by steering the cursor instead
   nearKiosk: boolean; // standing close to the download kiosk
   kioskOpen: boolean; // the résumé/portfolio download panel is open
   seatIndex: number | null; // nearest bench in sit range (for the "Press E" prompt)
@@ -41,6 +42,7 @@ interface MuseumState {
   setSelected: (s: string | null) => void;
   setNearby: (s: string | null) => void;
   setEntered: (b: boolean) => void;
+  setFreeLook: (b: boolean) => void;
   setNearKiosk: (b: boolean) => void;
   setKioskOpen: (b: boolean) => void;
   setSeatIndex: (i: number | null) => void;
@@ -64,6 +66,7 @@ export const useMuseum = create<MuseumState>((set) => ({
   selected: null,
   nearby: null,
   entered: false,
+  freeLook: false,
   nearKiosk: false,
   kioskOpen: false,
   seatIndex: null,
@@ -82,6 +85,7 @@ export const useMuseum = create<MuseumState>((set) => ({
   setSelected: (selected) => set({ selected }),
   setNearby: (nearby) => set((s) => (s.nearby === nearby ? s : { nearby })),
   setEntered: (entered) => set({ entered }),
+  setFreeLook: (freeLook) => set((s) => (s.freeLook === freeLook ? s : { freeLook })),
   setNearKiosk: (nearKiosk) => set((s) => (s.nearKiosk === nearKiosk ? s : { nearKiosk })),
   setKioskOpen: (kioskOpen) => set({ kioskOpen }),
   setSeatIndex: (seatIndex) => set((s) => (s.seatIndex === seatIndex ? s : { seatIndex })),

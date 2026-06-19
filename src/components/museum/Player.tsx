@@ -8,6 +8,7 @@ import { playerPos, playerDir, useMuseum } from "@/store/museum";
 
 const SPEED = 3.6;
 const ACCEL = 9;
+const LOOK_RATE = 2.0; // rad/sec at full cursor deflection (no-pointer-lock free-look)
 const SIT_RANGE = 1.7; // how close to a bench before "Press E to sit" shows
 const IDLE_MS = 4000; // seated stillness before the view starts panning itself
 const PAN_SPEED = 0.32; // auto-pan angular speed
@@ -26,6 +27,12 @@ export default function Player() {
   const basePitch = useRef(0);
   const panPhase = useRef(0);
   const lastInput = useRef(0);
+
+  // free-look (pointer-lock unavailable): steer by cursor position
+  const mouse = useRef({ x: 0, y: 0 });
+  const yaw = useRef(0);
+  const pitch = useRef(0);
+  const lookInit = useRef(false);
 
   useEffect(() => {
     camera.rotation.order = "YXZ"; // so reading rotation.y gives a clean yaw
@@ -52,6 +59,7 @@ export default function Player() {
     useMuseum.getState().setAutoPanning(false);
     camera.position.y = EYE_H;
     basePitch.current = 0;
+    lookInit.current = false; // re-sync free-look heading to wherever we stood up facing
   };
 
   useEffect(() => {
@@ -70,7 +78,11 @@ export default function Player() {
       if (seatedRef.current !== null && MOVE_KEYS.includes(e.code)) stand();
     };
     const up = (e: KeyboardEvent) => (keys.current[e.code] = false);
-    const move = () => (lastInput.current = performance.now());
+    const move = (e: MouseEvent) => {
+      lastInput.current = performance.now();
+      mouse.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.current.y = (e.clientY / window.innerHeight) * 2 - 1;
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     window.addEventListener("mousemove", move);
@@ -117,6 +129,25 @@ export default function Player() {
     // ─── standing: free walk ───
     const k = keys.current;
     const frozen = st.selected !== null || st.kioskOpen || st.chatOpen;
+
+    // no-pointer-lock fallback: steer the view with the cursor (centre = still,
+    // toward the edges = turn). Runs only when free-look mode is engaged.
+    if (st.freeLook && !frozen) {
+      if (!lookInit.current) {
+        yaw.current = camera.rotation.y;
+        pitch.current = camera.rotation.x;
+        lookInit.current = true;
+      }
+      const dz = 0.12;
+      const defl = (v: number) => {
+        const a = Math.abs(v);
+        return a < dz ? 0 : Math.sign(v) * ((a - dz) / (1 - dz));
+      };
+      yaw.current -= defl(mouse.current.x) * LOOK_RATE * dt;
+      pitch.current -= defl(mouse.current.y) * LOOK_RATE * dt;
+      pitch.current = Math.max(-1.2, Math.min(1.2, pitch.current));
+      camera.rotation.set(pitch.current, yaw.current, 0);
+    }
 
     const f =
       (!frozen && (k["KeyW"] || k["ArrowUp"]) ? 1 : 0) -

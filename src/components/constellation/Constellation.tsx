@@ -74,8 +74,8 @@ export default function Constellation() {
     const st = useConstellation.getState();
     if (st.soundOn) warpSweep();
     setWarping(true);
-    // gather to sun → swirl into portal → fly through → load
-    window.setTimeout(() => router.push("/museum"), 1950);
+    // slow gather → alien orb → solid light → SHATTER (seen) → white → load light museum
+    window.setTimeout(() => router.push("/museum"), 6600);
   };
 
   const current = nodes[Math.max(0, Math.min(nodes.length - 1, tourIndex))];
@@ -200,10 +200,10 @@ export default function Constellation() {
       <div
         className="pointer-events-none absolute inset-0"
         style={{
-          background: "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.98), rgba(255,236,198,0.5) 28%, rgba(255,255,255,0) 64%)",
+          background: "#ffffff",
           opacity: warping ? 1 : 0,
-          transform: warping ? "scale(1.15)" : "scale(0.05)",
-          transition: "opacity 1.7s ease-in, transform 1.9s cubic-bezier(0.6,0,0.9,1)",
+          // hold clear so the SHATTER is seen in full, then the flooding white completes it
+          transition: "opacity 0.9s ease-in 5.4s",
         }}
       />
 
